@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>工具箱</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0; font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(135deg, #eef2ff 0%, #f4f6fb 100%);
+      color: #1f2937; min-height: 100vh; padding: 48px 24px;
+    }
+    .container { max-width: 720px; margin: 0 auto; }
+    h1 { font-size: 24px; margin: 0 0 8px; }
+    p.sub { margin: 0 0 32px; color: #6b7280; font-size: 14px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 16px;
+    }
+    .tool-card {
+      display: block; background: #fff; border-radius: 14px; padding: 24px 20px;
+      box-shadow: 0 4px 20px rgba(0,0,0,.06); text-decoration: none; color: inherit;
+      transition: transform .12s, box-shadow .12s; cursor: pointer;
+    }
+    .tool-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 30px rgba(0,0,0,.10);
+    }
+    .tool-icon { font-size: 32px; margin-bottom: 10px; }
+    .tool-name { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    .tool-desc { font-size: 12px; color: #6b7280; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>工具箱</h1>
+    <p class="sub">小工具集合，持续更新中。</p>
+    <div class="grid">
+      {% for tool in tools %}
+      <a class="tool-card" href="{{ tool.route }}">
+        <div class="tool-icon">{{ tool.icon }}</div>
+        <div class="tool-name">{{ tool.name }}</div>
+        <div class="tool-desc">{{ tool.description }}</div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+</body>
+</html>

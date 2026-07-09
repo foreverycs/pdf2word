@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PDF 转 Word — 工具箱</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0; font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(135deg, #eef2ff 0%, #f4f6fb 100%);
+      color: #1f2937;
+      display: flex; min-height: 100vh; padding: 24px;
+    }
+    .card {
+      margin: auto;
+      background: #fff; padding: 32px 36px; border-radius: 16px;
+      width: min(460px, 92vw);
+      box-shadow: 0 10px 40px rgba(0,0,0,.08);
+    }
+    .back { display: inline-block; margin-bottom: 16px; color: #4f46e5; text-decoration: none; font-size: 13px; }
+    .back:hover { text-decoration: underline; }
+    h1 { font-size: 20px; margin: 0 0 6px; }
+    p.sub { margin: 0 0 24px; color: #6b7280; font-size: 13px; }
+    .drop {
+      display: block; width: 100%;
+      border: 2px dashed #c7d2fe; border-radius: 12px; padding: 28px 16px;
+      text-align: center; cursor: pointer; transition: .15s; background: #fafbff;
+    }
+    .drop:hover, .drop.drag { border-color: #6366f1; background: #eef2ff; }
+    .drop strong { color: #4f46e5; }
+    input[type=file] { display: none; }
+    button {
+      width: 100%; margin-top: 18px; padding: 11px; border: 0; border-radius: 10px;
+      background: #4f46e5; color: #fff; font-size: 15px; cursor: pointer;
+    }
+    button:disabled { background: #c7c9d9; cursor: not-allowed; }
+    #status { margin-top: 14px; font-size: 13px; min-height: 18px; }
+    .err { color: #dc2626; }
+    .ok { color: #16a34a; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <a class="back" href="/">&larr; 返回工具箱</a>
+    <h1>PDF → Word 转换器</h1>
+    <p class="sub">适用于纯文本 / 表格类 PDF，高保真还原合并单元格与样式。</p>
+    <label class="drop" id="drop">
+      <input type="file" id="file" accept="application/pdf" />
+      <div>点击或拖拽 <strong>PDF 文件</strong> 到此处</div>
+      <div id="name" style="margin-top:8px;color:#4f46e5;font-size:13px;"></div>
+    </label>
+    <button id="btn" disabled>开始转换</button>
+    <div id="status"></div>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById('file');
+    const drop = document.getElementById('drop');
+    const btn = document.getElementById('btn');
+    const name = document.getElementById('name');
+    const status = document.getElementById('status');
+    let selected = null;
+
+    function downloadName(disposition) {
+      if (!disposition) return "output.docx";
+      const star = /filename\*=(?:UTF-8'')?([^;]+)/i.exec(disposition);
+      if (star) {
+        try { return decodeURIComponent(star[1].replace(/\+/g, " ")); }
+        catch (e) { /* fall through */ }
+      }
+      const ascii = /filename="?([^";]+)"?/i.exec(disposition);
+      if (ascii) return ascii[1];
+      return "output.docx";
+    }
+
+    fileInput.addEventListener('change', e => {
+      selected = e.target.files[0];
+      name.textContent = selected ? selected.name : '';
+      btn.disabled = !selected;
+      status.textContent = '';
+    });
+
+    ['dragover', 'dragenter'].forEach(ev =>
+      drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('drag'); }));
+    ['dragleave', 'drop'].forEach(ev =>
+      drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('drag'); }));
+    drop.addEventListener('drop', e => {
+      selected = e.dataTransfer.files[0];
+      name.textContent = selected ? selected.name : '';
+      btn.disabled = !selected;
+    });
+
+    btn.addEventListener('click', async () => {
+      if (!selected) return;
+      btn.disabled = true;
+      status.className = '';
+      status.textContent = '转换中…';
+      const fd = new FormData();
+      fd.append('file', selected);
+      try {
+        const res = await fetch('/tools/pdf2word/convert', { method: 'POST', body: fd });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || '转换失败');
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = downloadName(res.headers.get("content-disposition"));
+        a.click();
+        URL.revokeObjectURL(url);
+        status.className = 'ok';
+        status.textContent = '转换完成，文件已下载。';
+      } catch (e) {
+        status.className = 'err';
+        status.textContent = e.message;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
