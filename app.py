@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="工具箱", version="0.4.0", lifespan=lifespan)
+app = FastAPI(title="工具箱", version="0.5.0", lifespan=lifespan)
 
 # Register tool routers
 app.include_router(pdf2word_router)
@@ -49,8 +49,10 @@ async def index(request: Request):
 @app.get("/health")
 async def health():
     from word2pdf import engine_info
+    from converter import ocr_info
 
     w2p = engine_info()
+    ocr = ocr_info()
     return JSONResponse(
         {
             "status": "ok",
@@ -60,6 +62,10 @@ async def health():
                 "ready": w2p.get("ready", False),
                 "engines": w2p.get("engines") or [],
                 "preferred": w2p.get("preferred"),
+            },
+            "ocr": {
+                "available": ocr.get("available", False),
+                "lang": ocr.get("lang"),
             },
             "upload_history": {
                 "retention_days": RETENTION_DAYS,

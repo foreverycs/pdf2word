@@ -24,12 +24,16 @@ RUN set -eux; \
     fi
 
 # Headless LibreOffice for Word → PDF (+ CJK fonts for Chinese docs).
+# Optional OCR: tesseract + chi_sim/eng language packs for scanned PDFs.
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
         libreoffice-writer \
         libreoffice-java-common \
         default-jre-headless \
+        tesseract-ocr \
+        tesseract-ocr-chi-sim \
+        tesseract-ocr-eng \
         fonts-dejavu-core \
         fonts-liberation \
         fonts-noto-cjk \
@@ -42,7 +46,8 @@ RUN set -eux; \
     elif [ -x /usr/bin/libreoffice ]; then LO=/usr/bin/libreoffice; \
     else echo "LibreOffice binary not found" >&2; exit 1; fi; \
     echo "$LO" > /etc/libreoffice-path; \
-    "$LO" --version
+    "$LO" --version; \
+    tesseract --version
 
 ENV HOME=/tmp \
     SAL_USE_VCLPLUGIN=svp \

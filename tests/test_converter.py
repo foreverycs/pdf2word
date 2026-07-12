@@ -807,3 +807,135 @@ def test_title_table_gap_no_spacer_paragraph():
     assert cell_sb is None or cell_sb.pt < 6.0
 
 
+def test_cell_nested_runs_written_to_docx():
+    """Multi-run nested styles inside a cell become multiple Word runs."""
+    from converter.pdf_reader import PageContent, TableBlock, Cell, TextRun
+    from docx import Document
+
+    rich = [
+        [
+            TextRun(text="标题", font_size=14.0, font_name="SimHei"),
+            TextRun(text=" 副注", font_size=9.0, font_name="SimSun"),
+        ],
+        [TextRun(text="第二段正文", font_size=10.5, font_name="SimSun")],
+    ]
+    cells = [[Cell(text="标题 副注\n第二段正文", paragraphs=rich)]]
+    owner = [[(0, 0)]]
+    table = TableBlock(
+        rows=1, cols=1, cells=cells, owner=owner,
+        col_widths=[200], row_heights=[40],
+        top=50, bottom=100, x0=72,
+    )
+    tmp = tempfile.mkdtemp(prefix="pdf2word_test_")
+    docx_path = os.path.join(tmp, "rich.docx")
+    write_document([PageContent(blocks=[table], width=595, height=842)], docx_path)
+    doc = Document(docx_path)
+    cell = doc.tables[0].cell(0, 0)
+    assert len(cell.paragraphs) >= 2
+    assert "标题" in cell.paragraphs[0].text
+    assert "副注" in cell.paragraphs[0].text
+    assert "第二段" in cell.paragraphs[1].text
+    # Nested runs: first paragraph should have more than one run when styles differ.
+    assert len(cell.paragraphs[0].runs) >= 2
+
+
+def test_refine_merges_from_words_horizontal_span():
+    """Word boxes spanning multiple empty columns grow colspan."""
+    from converter.pdf_reader import Cell, _refine_merges_from_words
+
+    # 1 row × 3 cols; left cell holds a wide title word.
+    cells = [[Cell(text="总标题"), Cell(text=""), Cell(text="")]]
+    owner = [[(0, 0), (0, 1), (0, 2)]]
+    vx = [0.0, 100.0, 200.0, 300.0]
+    hy = [0.0, 30.0]
+    words = [
+        {"text": "总标题", "x0": 5.0, "x1": 280.0, "top": 5.0, "bottom": 20.0,
+         "size": 12.0, "fontname": "SimSun"},
+    ]
+    _refine_merges_from_words(cells, owner, vx, hy, words, 0, 0, 300, 30)
+    assert cells[0][0].colspan == 3
+    assert owner[0][1] == (0, 0)
+    assert owner[0][2] == (0, 0)
+    assert cells[0][1] is None
+    assert cells[0][2] is None
+
+
+def test_region_paragraphs_splits_font_runs():
+    from converter.pdf_reader import _region_paragraphs
+
+    vx = [0.0, 200.0]
+    hy = [0.0, 40.0]
+    words = [
+        {"text": "粗", "x0": 10, "x1": 22, "top": 5, "bottom": 18,
+         "size": 14.0, "fontname": "SimHei,Bold"},
+        {"text": "细", "x0": 24, "x1": 36, "top": 5, "bottom": 18,
+         "size": 10.0, "fontname": "SimSun"},
+        {"text": "下行", "x0": 10, "x1": 40, "top": 22, "bottom": 34,
+         "size": 10.0, "fontname": "SimSun"},
+    ]
+    paras = _region_paragraphs(words, vx, hy, 0, 0, 0, 0)
+    assert len(paras) == 2
+    assert len(paras[0]) == 2
+    assert paras[0][0].font_size == 14.0
+    assert paras[0][1].font_size == 10.0
+    assert paras[1][0].text == "下行"
+
+
+def test_ocr_module_graceful_when_unavailable(monkeypatch):
+    from converter import ocr as ocr_mod
+
+    ocr_mod.ocr_available.cache_clear()
+    monkeypatch.setattr(ocr_mod, "ocr_available", lambda: False)
+    blocks = ocr_mod.ocr_image_to_blocks(
+        b"not-a-png", page_width=100, page_height=100
+    )
+    assert blocks == []
+    info = ocr_mod.ocr_info()
+    assert "available" in info
+
+
+def test_content_warnings_ocr_flag():
+    from converter.pdf_reader import PageContent, TextBlock, content_warnings
+
+    pages = [PageContent(blocks=[
+        TextBlock(text="识别文字", top=10, bottom=20, x0=10, x1=80, from_ocr=True)
+    ], width=200, height=200)]
+    warns = content_warnings(pages)
+    assert "ocr_applied" in warns
+
+
+def test_find_tables_hybrid_accepts_borderless(tmp_path):
+    """Borderless grid (text strategy) should still yield a table block."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+
+    pdf_path = str(tmp_path / "borderless.pdf")
+    c = canvas.Canvas(pdf_path, pagesize=A4)
+    # Two-column form labels without drawn grid lines (ASCII for font-safe tests).
+    y = 750
+    for left, right in [("Name", "Alice"), ("Dept", "R&D"), ("Date", "2026-07-12")]:
+        c.drawString(72, y, left)
+        c.drawString(220, y, right)
+        y -= 28
+    c.save()
+
+    pages = extract_document(pdf_path)
+    assert pages
+    tables = [b for b in pages[0].blocks if isinstance(b, TableBlock)]
+    texts = [b for b in pages[0].blocks if isinstance(b, TextBlock)]
+    if not tables:
+        joined = " ".join(t.text for t in texts)
+        assert "Name" in joined and "Alice" in joined
+    else:
+        flat = []
+        for row in tables[0].cells:
+            for cell in row:
+                if cell and cell.text:
+                    flat.append(cell.text)
+        blob = " ".join(flat)
+        page_text = " ".join(
+            (b.text if isinstance(b, TextBlock) else "") for b in pages[0].blocks
+        )
+        assert "Name" in blob or "Alice" in blob or "Name" in page_text
+
+

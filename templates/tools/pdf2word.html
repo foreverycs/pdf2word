@@ -278,13 +278,14 @@
         <div class="icon" aria-hidden="true">📄</div>
         <div>
           <h1>PDF → Word 转换器</h1>
-          <p>纯文本 / 表格高保真转换；支持多文件、页码范围、图片嵌入。扫描件按图片写入（无 OCR）。</p>
+          <p>纯文本 / 表格高保真转换；支持多文件、页码范围、图片嵌入。扫描件可嵌入图片，或可选 OCR 生成可编辑文字。</p>
         </div>
       </div>
 
       <div class="features">
         <span class="feat">合并单元格</span>
         <span class="feat">图片嵌入</span>
+        <span class="feat">可选 OCR</span>
         <span class="feat">页码范围</span>
         <span class="feat">批量 ZIP</span>
       </div>
@@ -313,6 +314,17 @@
           <input type="checkbox" id="pageBreaks" checked />
           在 Word 中按 PDF 分页插入分页符
         </label>
+        <label class="check" id="ocrLabel" title="需要本机安装 Tesseract">
+          <input type="checkbox" id="ocrEnabled" {% if ocr and ocr.available %}{% else %}disabled{% endif %} />
+          扫描页启用 OCR（可编辑文字）
+          <span class="hint" id="ocrHint" style="display:block;margin-top:4px;font-weight:400">
+            {% if ocr and ocr.available %}
+              Tesseract 可用{% if ocr.lang %} · 语言 {{ ocr.lang }}{% endif %}
+            {% else %}
+              未检测到 Tesseract（安装后并 pip install pytesseract 可用）
+            {% endif %}
+          </span>
+        </label>
       </div>
 
       <button id="btn" disabled>开始转换</button>
@@ -332,6 +344,7 @@
     const status = document.getElementById('status');
     const pageRange = document.getElementById('pageRange');
     const pageBreaks = document.getElementById('pageBreaks');
+    const ocrEnabled = document.getElementById('ocrEnabled');
     const progress = document.getElementById('progress');
     const bar = document.getElementById('bar');
 
@@ -342,6 +355,9 @@
       const saved = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
       if (typeof saved.pageRange === 'string') pageRange.value = saved.pageRange;
       if (typeof saved.pageBreaks === 'boolean') pageBreaks.checked = saved.pageBreaks;
+      if (typeof saved.ocr === 'boolean' && ocrEnabled && !ocrEnabled.disabled) {
+        ocrEnabled.checked = saved.ocr;
+      }
     } catch (e) { /* ignore */ }
 
     function persistOpts() {
@@ -349,12 +365,14 @@
         localStorage.setItem(LS_KEY, JSON.stringify({
           pageRange: pageRange.value,
           pageBreaks: pageBreaks.checked,
+          ocr: !!(ocrEnabled && ocrEnabled.checked),
         }));
       } catch (e) { /* ignore */ }
     }
     pageRange.addEventListener('change', persistOpts);
     pageRange.addEventListener('blur', persistOpts);
     pageBreaks.addEventListener('change', persistOpts);
+    if (ocrEnabled) ocrEnabled.addEventListener('change', persistOpts);
 
     function fmtSize(n) {
       if (n < 1024) return n + ' B';
@@ -516,6 +534,9 @@
       const range = pageRange.value.trim();
       if (range) fd.append('page_range', range);
       fd.append('page_breaks', pageBreaks.checked ? 'true' : 'false');
+      if (ocrEnabled && ocrEnabled.checked && !ocrEnabled.disabled) {
+        fd.append('ocr', 'true');
+      }
 
       const url = multi ? '/tools/pdf2word/convert-batch' : '/tools/pdf2word/convert';
       try {

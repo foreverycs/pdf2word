@@ -58,6 +58,59 @@ def test_engine_info_shape():
     assert "preferred" in info
     assert isinstance(info["engines"], list)
     assert info["ready"] is bool(info["engines"])
+    assert "notes" in info
+
+
+def test_docx_macro_detection_clean(tmp_path: Path):
+    from word2pdf.converter import _docx_has_macros
+
+    p = tmp_path / "clean.docx"
+    _make_docx(str(p))
+    assert _docx_has_macros(p) is False
+
+
+def test_scaled_timeout_grows_with_size(tmp_path: Path):
+    from word2pdf.converter import _scaled_timeout, DEFAULT_TIMEOUT_SEC
+
+    small = tmp_path / "s.docx"
+    _make_docx(str(small))
+    t_small = _scaled_timeout(small, base=DEFAULT_TIMEOUT_SEC)
+    assert t_small >= DEFAULT_TIMEOUT_SEC
+
+    big = tmp_path / "b.docx"
+    # ~3 MB payload so timeout scales above base.
+    big.write_bytes(b"PK" + b"\0" * (3 * 1024 * 1024))
+    t_big = _scaled_timeout(big, base=DEFAULT_TIMEOUT_SEC)
+    assert t_big > t_small
+
+
+def test_convert_falls_back_to_second_engine(tmp_path: Path):
+    src = tmp_path / "sample.docx"
+    _make_docx(str(src))
+    out = tmp_path / "sample.pdf"
+
+    def fail_lo(input_path, output_pdf, timeout=180):
+        raise ConversionError("LibreOffice boom")
+
+    def ok_ms(input_path, output_pdf):
+        output_pdf.write_bytes(b"%PDF-1.4 via-word")
+
+    with mock.patch(
+        "word2pdf.converter.available_engines",
+        return_value=["libreoffice", "msword"],
+    ), mock.patch(
+        "word2pdf.converter._convert_libreoffice",
+        side_effect=fail_lo,
+    ), mock.patch(
+        "word2pdf.converter._convert_msword",
+        side_effect=ok_ms,
+    ), mock.patch(
+        "word2pdf.converter._docx_has_macros",
+        return_value=False,
+    ):
+        path, engine = convert_to_pdf(str(src), str(out))
+    assert engine == "msword"
+    assert Path(path).read_bytes().startswith(b"%PDF")
 
 
 def test_convert_no_engine_raises(tmp_path: Path):

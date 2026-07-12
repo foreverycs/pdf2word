@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
-from converter import content_warnings, count_blocks, extract_document, write_document
+from converter import content_warnings, count_blocks, extract_document, ocr_info, write_document
 from storage import archive_conversion
 
 router = APIRouter(prefix="/tools/pdf2word", tags=["pdf2word"])
@@ -33,7 +33,19 @@ _SAFE_NAME_RE = re.compile(r"[^\w\u4e00-\u9fff.\-]+", re.UNICODE)
 
 @router.get("", response_class=HTMLResponse)
 async def tool_page(request: Request):
-    return templates.TemplateResponse(request, "tools/pdf2word.html")
+    return templates.TemplateResponse(
+        request,
+        "tools/pdf2word.html",
+        {"ocr": ocr_info()},
+    )
+
+
+@router.get("/ocr-status")
+async def ocr_status():
+    """Return whether optional OCR (Tesseract) is available."""
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse(ocr_info())
 
 
 def _safe_stem(filename: str) -> str:
@@ -65,8 +77,9 @@ def _convert_one(
     docx_path: str,
     page_range: Optional[str],
     page_breaks: bool,
+    ocr: bool = False,
 ) -> dict:
-    pages = extract_document(pdf_path, page_range=page_range)
+    pages = extract_document(pdf_path, page_range=page_range, ocr=ocr)
     if not pages:
         raise ValueError("No content extracted from PDF")
     write_document(pages, docx_path, page_breaks=page_breaks)
@@ -75,7 +88,8 @@ def _convert_one(
     if "empty" in stats["warnings"]:
         raise ValueError(
             "No extractable content (empty or unsupported PDF). "
-            "Scanned PDFs without a renderable image cannot be converted."
+            "Scanned PDFs without a renderable image cannot be converted. "
+            "Enable OCR if Tesseract is installed."
         )
     return stats
 
@@ -92,11 +106,22 @@ def _stats_headers(stats: dict) -> dict:
     if warns:
         # ASCII-safe comma list for simple clients; also expose a message.
         headers["X-Warnings"] = ",".join(warns)
-        if "image_only" in warns:
+        if "ocr_applied" in warns:
             headers["X-Warning-Message"] = quote(
-                "Detected image-only/scanned pages; embedded as images (no OCR)"
+                "OCR applied on scanned page(s); text is editable but may contain errors"
+            )
+        elif "image_only" in warns:
+            headers["X-Warning-Message"] = quote(
+                "Detected image-only/scanned pages; embedded as images "
+                "(enable OCR for editable text)"
             )
     return headers
+
+
+def _parse_ocr_flag(ocr: Optional[str]) -> bool:
+    if ocr is None:
+        return False
+    return str(ocr).strip().lower() in ("1", "true", "yes", "on")
 
 
 @router.post("/convert")
@@ -105,18 +130,33 @@ async def convert(
     file: UploadFile = File(...),
     page_range: Optional[str] = Form(None),
     page_breaks: bool = Form(True),
+    ocr: Optional[str] = Form(None),
 ):
     """Convert a single PDF to Word.
 
     Optional form fields:
     - ``page_range``: 1-based range like ``1-3,5`` (default: all pages)
     - ``page_breaks``: insert Word page breaks between PDF pages (default: true)
+    - ``ocr``: ``true``/``1`` to OCR scanned pages (needs Tesseract)
     """
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
     if file.size is not None and file.size > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="File too large (max 50 MB)")
+
+    use_ocr = _parse_ocr_flag(ocr)
+    if use_ocr:
+        from converter import ocr_available
+
+        if not ocr_available():
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "OCR requested but Tesseract is not available. "
+                    "Install Tesseract and pytesseract, or set TESSERACT_CMD."
+                ),
+            )
 
     tmp_dir = tempfile.mkdtemp(prefix="pdf2word_")
     pdf_path = os.path.join(tmp_dir, "input.pdf")
@@ -126,7 +166,7 @@ async def convert(
     try:
         await _save_upload(file, pdf_path)
         stats = await asyncio.to_thread(
-            _convert_one, pdf_path, docx_path, range_spec, page_breaks
+            _convert_one, pdf_path, docx_path, range_spec, page_breaks, use_ocr
         )
     except HTTPException:
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -167,6 +207,7 @@ async def convert_batch(
     files: List[UploadFile] = File(...),
     page_range: Optional[str] = Form(None),
     page_breaks: bool = Form(True),
+    ocr: Optional[str] = Form(None),
 ):
     """Convert multiple PDFs; returns a ZIP of .docx files."""
     if not files:
@@ -176,6 +217,19 @@ async def convert_batch(
             status_code=400,
             detail=f"Too many files (max {MAX_BATCH_FILES})",
         )
+
+    use_ocr = _parse_ocr_flag(ocr)
+    if use_ocr:
+        from converter import ocr_available
+
+        if not ocr_available():
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "OCR requested but Tesseract is not available. "
+                    "Install Tesseract and pytesseract, or set TESSERACT_CMD."
+                ),
+            )
 
     range_spec = (page_range or "").strip() or None
     tmp_dir = tempfile.mkdtemp(prefix="pdf2word_batch_")
@@ -205,7 +259,12 @@ async def convert_batch(
 
                 try:
                     stats = await asyncio.to_thread(
-                        _convert_one, pdf_path, docx_path, range_spec, page_breaks
+                        _convert_one,
+                        pdf_path,
+                        docx_path,
+                        range_spec,
+                        page_breaks,
+                        use_ocr,
                     )
                 except ValueError as exc:
                     raise HTTPException(

@@ -17,6 +17,7 @@ from .pdf_reader import (
     ImageBlock,
     LineBlock,
     Cell,
+    TextRun,
 )
 
 # ----- style defaults -------------------------------------------------------
@@ -104,6 +105,50 @@ def _set_cell_text(cell, text: str, font_name: Optional[str],
         br.add_break()
         run = paragraph.add_run(line)
         _set_run_font(run, font_name, font_size, bold)
+
+
+def _set_cell_rich(
+    cell,
+    paragraphs: List[List[TextRun]],
+    *,
+    fallback_font: Optional[str] = None,
+    fallback_size: Optional[float] = None,
+    align: str = "left",
+) -> None:
+    """Write multi-paragraph / multi-run nested styles into a table cell.
+
+    Each inner list is one paragraph; each ``TextRun`` becomes a Word run with
+    its own font name/size (bold inferred from the PDF font name).
+    """
+    if not paragraphs:
+        cell.text = ""
+        return
+
+    # Clear default empty paragraph content.
+    cell.text = ""
+    # Reuse the first paragraph; add more as needed.
+    first = True
+    for para_runs in paragraphs:
+        if first:
+            p = cell.paragraphs[0]
+            # Remove any default run left by cell.text = "".
+            for r in list(p.runs):
+                r._element.getparent().remove(r._element)
+            first = False
+        else:
+            p = cell.add_paragraph()
+        p.alignment = _HALIGN.get(align, WD_ALIGN_PARAGRAPH.LEFT)
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after = Pt(0)
+        if not para_runs:
+            continue
+        for tr in para_runs:
+            if not tr.text:
+                continue
+            run = p.add_run(tr.text)
+            fname = tr.font_name or fallback_font
+            fsize = tr.font_size if tr.font_size is not None else fallback_size
+            _set_run_font(run, fname, fsize, _is_bold(fname))
 
 
 def _set_cell_borders(cell, borders: Optional[dict]) -> None:
@@ -628,11 +673,20 @@ def _write_table(
                 end_r = min(r + cell_obj.rowspan - 1, table.rows - 1)
                 end_c = min(c + cell_obj.colspan - 1, table.cols - 1)
                 target = target.merge(grid.cell(end_r, end_c))
-            _set_cell_text(
-                target, cell_obj.text,
-                font_name=cell_obj.font_name, font_size=cell_obj.font_size,
-                bold=_is_bold(cell_obj.font_name),
-            )
+            if cell_obj.paragraphs:
+                _set_cell_rich(
+                    target,
+                    cell_obj.paragraphs,
+                    fallback_font=cell_obj.font_name,
+                    fallback_size=cell_obj.font_size,
+                    align=cell_obj.align,
+                )
+            else:
+                _set_cell_text(
+                    target, cell_obj.text,
+                    font_name=cell_obj.font_name, font_size=cell_obj.font_size,
+                    bold=_is_bold(cell_obj.font_name),
+                )
             target.vertical_alignment = _VALIGN.get(
                 cell_obj.valign, WD_ALIGN_VERTICAL.TOP
             )

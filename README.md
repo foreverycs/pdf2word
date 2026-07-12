@@ -4,8 +4,8 @@
 
 | 工具 | 说明 |
 |------|------|
-| **PDF 转 Word** | 纯文本 / 表格 PDF → 高保真 `.docx`（合并单元格、图片、页边距推断） |
-| **Word 转 PDF** | `.docx` / `.doc` → PDF（LibreOffice 优先，Windows 可回退 Microsoft Word） |
+| **PDF 转 Word** | 纯文本 / 表格 PDF → 高保真 `.docx`（合并单元格、嵌套样式、图片、可选 OCR） |
+| **Word 转 PDF** | `.docx` / `.doc` → PDF（LibreOffice 优先，Windows 可回退 Microsoft Word；宏/ActiveX 安全降级） |
 
 ## 特性
 
@@ -13,7 +13,10 @@
 
 - 高保真还原：合并单元格（`rowspan` / `colspan`）、表格边框、字号、对齐、背景色。
 - 文本与表格混排：按页面纵向顺序交错输出。
-- **图片嵌入**：提取页面内图片；纯图片/扫描页整页栅格化写入 Word（**不做 OCR**）。
+- **图片嵌入**：提取页面内图片；纯图片/扫描页默认整页栅格化写入 Word。
+- **可选 OCR**：扫描页可启用 Tesseract（`ocr=true` / `--ocr`），输出可编辑文字（需系统 Tesseract + `pytesseract`）。
+- **表格算法**：线框 + 混合 + 无框线 text 策略融合；按词框推断跨列合并。
+- **单元格嵌套样式**：单元格内多段落、多字体/字号 run 级还原。
 - **水平定位**：按 PDF 内容边界推断 Word 页边距，文本/图片/表格 x 坐标 1:1 映射，避免整体偏左。
 - **同行布局**：Logo+公司名、签名栏等同一行元素用制表位写入同一段落（不用布局表格）。
 - **横线还原**：页眉下划线等细矩形/线段转为段落底边框（`pBdr`）。
@@ -25,6 +28,7 @@
 - 支持 `.docx` / `.doc`；单文件或批量 ZIP。
 - **LibreOffice** 无头模式（服务器 / Docker 推荐）；可设 `LIBREOFFICE_PATH`。
 - **Microsoft Word** COM 回退（仅 Windows，需本机安装 Word + `pywin32` 或 `docx2pdf`）。
+- 非 ASCII 路径暂存、超时按文件体积缩放、引擎失败自动回退；宏/ActiveX 禁用并给出明确错误提示。
 - 页面展示引擎状态；无引擎时返回 HTTP 503。
 
 ### 通用
@@ -60,6 +64,8 @@ uvicorn app:app --host 127.0.0.1 --port 8000
 python -m converter input.pdf
 python -m converter input.pdf -o out.docx --pages 1-3,5
 python -m converter input.pdf --no-page-breaks
+python -m converter input.pdf --ocr                 # 扫描页 OCR
+python -m converter --ocr-info                      # 查看 Tesseract 状态
 
 # Word → PDF（需 LibreOffice 或 Windows + Word）
 python -m word2pdf input.docx
@@ -135,6 +141,7 @@ docker compose down
 | `GET` | `/api/uploads` | 最近上传记录 JSON |
 | `GET` | `/api/uploads/{id}/download` | 下载归档的输入文件 |
 | `GET` | `/tools/pdf2word` | PDF→Word 页面 |
+| `GET` | `/tools/pdf2word/ocr-status` | OCR（Tesseract）状态 |
 | `POST` | `/tools/pdf2word/convert` | 单 PDF → `.docx` |
 | `POST` | `/tools/pdf2word/convert-batch` | 多 PDF → `.zip` |
 | `GET` | `/tools/word2pdf` | Word→PDF 页面 |
@@ -149,9 +156,10 @@ docker compose down
 | `file` / `files` | PDF 文件（单文件 / 批量） |
 | `page_range` | 可选，如 `1-3,5`（1 起始） |
 | `page_breaks` | 可选，默认 `true`，是否插入 Word 分页符 |
+| `ocr` | 可选，`true`/`1` 对扫描页启用 OCR（需 Tesseract） |
 
 响应头：`X-Pages`、`X-Tables`、`X-Text-Blocks`、`X-Images`、`X-Lines`；  
-可选警告：`X-Warnings`（如 `image_only`）、`X-Warning-Message`；批量另有 `X-Files`。
+可选警告：`X-Warnings`（如 `image_only`、`ocr_applied`）、`X-Warning-Message`；批量另有 `X-Files`。
 
 ### Word → PDF 表单字段
 
@@ -179,6 +187,7 @@ converter/
   __main__.py               PDF→Word CLI
   pdf_reader.py             提取文本 / 表格 / 图片 / 横线
   docx_writer.py            生成 Word
+  ocr.py                    可选 Tesseract OCR
 word2pdf/
   __main__.py               Word→PDF CLI
   converter.py              LibreOffice / MS Word 引擎
@@ -199,9 +208,11 @@ Dockerfile / docker-compose.yml
 
 - `pdf_reader` 通过 `table.cells` 的矩形几何推断单元格跨度：合并区域在
   pdfplumber 中表现为**跨越多行/多列带**的单一矩形，据此得到
-  `rowspan` / `colspan`。
+  `rowspan` / `colspan`；无框线表再用词框跨列启发式 `_refine_merges_from_words` 补全。
+- 表格检测为 **hybrid**：lines → lines/text 混合 → text，去重重叠区域。
+- 单元格内按字体/字号拆分为 `TextRun` 段落列表，由 `docx_writer._set_cell_rich` 写出。
 - 页面图片通过 pdfplumber 区域栅格化为 PNG 后写入 Word；无文本/表格的页面
-  回退为整页图片，避免扫描件输出空白文档。
+  默认回退为整页图片；`ocr=True` 时走 Tesseract 生成可编辑 `TextBlock`。
 - 细长填充矩形 / 水平线段提取为 `LineBlock`（页眉下划线等）。
 - `docx_writer`：
   - 由内容 bbox 推断页边距，页尺寸取自 PDF，使水平位置与源文件一致；
@@ -213,16 +224,18 @@ Dockerfile / docker-compose.yml
 
 - `word2pdf.converter` 依次尝试 LibreOffice（`soffice --headless --convert-to pdf`）
   与 Microsoft Word COM；独立用户配置目录避免并发冲突。
-- Docker 镜像预装 `libreoffice-writer` 与 CJK 字体。
+- 非 ASCII / 过长路径会复制到 ASCII 工作目录；超时随文件体积增长。
+- 检测 VBA/ActiveX/OLE 时优先 MS Word，并禁用宏执行；失败信息聚合多引擎错误。
+- Docker 镜像预装 `libreoffice-writer`、CJK 字体与 Tesseract（`chi_sim`+`eng`）。
 
 ### 通用
 
 - 转换失败时立即清理临时目录；成功时在响应发送完毕后异步删除。
+- 环境变量：`PDF2WORD_OCR`、`PDF2WORD_OCR_LANG`、`TESSERACT_CMD`、`LIBREOFFICE_PATH`。
 
 ## 已知限制
 
-- PDF→Word 主要针对**有框线**的表格（lines 策略）。无框线表格会回退到 text 策略，
-  合并单元格检测精度可能下降。
-- **无 OCR**：扫描件以图片形式保留版面，文字不可编辑。
-- Word→PDF 版式依赖 LibreOffice / Word 渲染，复杂宏 / ActiveX 可能无法还原。
-- 单元格内复杂嵌套样式为后续迭代项。
+- 无框线表格与跨行合并仍依赖启发式，复杂表头可能需要人工校对。
+- OCR 为可选能力：识别率依赖扫描质量与语言包；默认不开启。
+- Word→PDF 版式仍依赖引擎渲染；复杂宏 / ActiveX / 嵌入控件无法完整还原。
+- 单元格内图片、嵌套表格尚未支持。

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 import re
 from collections import Counter
 from dataclasses import dataclass, field
@@ -20,7 +21,20 @@ IMAGE_RENDER_DPI = 144
 # Thin filled rectangles / strokes treated as horizontal rules (pt).
 HLINE_MAX_THICKNESS = 2.5
 HLINE_MIN_WIDTH = 40.0
+# Table detection: text-strategy tables must not heavily overlap line tables.
+TABLE_OVERLAP_REJECT = 0.45
+# Word bbox must cover this fraction of a grid cell to claim a merge span.
+SPAN_COVER_RATIO = 0.55
+# OCR render resolution (higher than display images for better recognition).
+OCR_RENDER_DPI = 200
 
+
+@dataclass
+class TextRun:
+    """A contiguous styled span inside a cell or paragraph."""
+    text: str
+    font_size: Optional[float] = None
+    font_name: Optional[str] = None
 
 
 @dataclass
@@ -36,6 +50,9 @@ class Cell:
     # per-edge borders: dict with keys top/left/bottom/right, each
     # (width_pt, color_hex, dashed) or omitted when no line exists on that edge.
     borders: Optional[dict] = None
+    # Nested styles: list of paragraphs, each a list of TextRun spans.
+    # When set, the writer prefers this over the flat ``text`` + single font.
+    paragraphs: Optional[List[List[TextRun]]] = None
 
 
 @dataclass
@@ -67,6 +84,7 @@ class TextBlock:
     font_size: Optional[float] = None
     font_name: Optional[str] = None
     align: str = "left"                 # horizontal alignment: left/center/right
+    from_ocr: bool = False              # produced by optional OCR on a scan
 
 
 
@@ -346,16 +364,56 @@ def _build_table(table, page, words) -> Optional[TableBlock]:
         bg_color = _region_bg(r_start, c_start, r_end, c_end)
         borders = _cell_borders(table_lines, vx[c_start], vx[c_end + 1],
                                 hy[r_start], hy[r_end + 1])
+        paragraphs = _region_paragraphs(
+            words, vx, hy, r_start, c_start, r_end, c_end
+        )
+        if paragraphs and not text:
+            text = _paragraphs_to_text(paragraphs)
 
         if cells[r_start][c_start] is not None:
             continue
         for rr in range(r_start, r_end + 1):
             for cc in range(c_start, c_end + 1):
                 owner[rr][cc] = (r_start, c_start)
-        cells[r_start][c_start] = Cell(text=text, rowspan=rowspan, colspan=colspan,
-                                       font_size=font_size, font_name=font_name,
-                                       align=align, valign=valign, bg_color=bg_color,
-                                       borders=borders or None)
+        cells[r_start][c_start] = Cell(
+            text=text,
+            rowspan=rowspan,
+            colspan=colspan,
+            font_size=font_size,
+            font_name=font_name,
+            align=align,
+            valign=valign,
+            bg_color=bg_color,
+            borders=borders or None,
+            paragraphs=paragraphs or None,
+        )
+
+    # Text-strategy / partial grids: grow merges when a word bbox spans
+    # multiple empty neighbour cells (common for borderless tables).
+    _refine_merges_from_words(cells, owner, vx, hy, words, x0, top, x1, bottom)
+
+    # Fill still-empty anchors with word text when extract() left them blank.
+    for r in range(nrows):
+        for c in range(ncols):
+            if owner[r][c] != (r, c):
+                continue
+            cell = cells[r][c]
+            if cell is None:
+                continue
+            if cell.text.strip() and cell.paragraphs:
+                continue
+            r1 = r + cell.rowspan - 1
+            c1 = c + cell.colspan - 1
+            paragraphs = _region_paragraphs(words, vx, hy, r, c, r1, c1)
+            if not paragraphs:
+                continue
+            cell.paragraphs = paragraphs
+            if not cell.text.strip():
+                cell.text = _paragraphs_to_text(paragraphs)
+            if cell.font_size is None or cell.font_name is None:
+                fs, fn = _region_font(r, c, r1, c1)
+                cell.font_size = cell.font_size or fs
+                cell.font_name = cell.font_name or fn
 
     # Any grid cell still unclaimed (no rect covers it) is part of a merge; it
     # is already marked via `owner`, so leave cells[r][c] as None.
@@ -369,6 +427,177 @@ def _build_table(table, page, words) -> Optional[TableBlock]:
         top=float(ttop), bottom=float(tbottom), x0=float(tx0),
         **border,
     )
+
+
+def _paragraphs_to_text(paragraphs: List[List[TextRun]]) -> str:
+    lines = []
+    for para in paragraphs:
+        lines.append("".join(run.text for run in para))
+    return "\n".join(lines)
+
+
+def _region_paragraphs(
+    words,
+    vx: List[float],
+    hy: List[float],
+    r0: int,
+    c0: int,
+    r1: int,
+    c1: int,
+) -> List[List[TextRun]]:
+    """Build nested paragraphs/runs for a cell region from page words."""
+    cell_l, cell_r = vx[c0], vx[c1 + 1]
+    cell_t, cell_b = hy[r0], hy[r1 + 1]
+    region_words = []
+    for w in words:
+        cx = (w["x0"] + w["x1"]) / 2
+        cy = (w["top"] + w["bottom"]) / 2
+        if cell_l - 1 <= cx <= cell_r + 1 and cell_t - 1 <= cy <= cell_b + 1:
+            region_words.append(w)
+    if not region_words:
+        return []
+
+    region_words.sort(key=lambda w: (round(w["top"], 1), w["x0"]))
+    lines: List[List[dict]] = []
+    for w in region_words:
+        if lines and (w["top"] - lines[-1][-1]["bottom"]) <= LINE_GAP:
+            lines[-1].append(w)
+        else:
+            lines.append([w])
+
+    paragraphs: List[List[TextRun]] = []
+    for line in lines:
+        ordered = sorted(line, key=lambda w: w["x0"])
+        runs: List[TextRun] = []
+        cur_key: Optional[Tuple[float, str]] = None
+        buf: List[dict] = []
+        for w in ordered:
+            size = round(float(w.get("size") or 0.0), 1)
+            fname = w.get("fontname") or ""
+            key = (size, fname)
+            if cur_key is None:
+                cur_key = key
+                buf = [w]
+            elif key == cur_key:
+                buf.append(w)
+            else:
+                text = _normalize_spacing(_join_words(buf))
+                if text:
+                    runs.append(TextRun(
+                        text=text,
+                        font_size=cur_key[0] or None,
+                        font_name=cur_key[1] or None,
+                    ))
+                cur_key = key
+                buf = [w]
+        if buf and cur_key is not None:
+            text = _normalize_spacing(_join_words(buf))
+            if text:
+                runs.append(TextRun(
+                    text=text,
+                    font_size=cur_key[0] or None,
+                    font_name=cur_key[1] or None,
+                ))
+        if runs:
+            paragraphs.append(runs)
+    return paragraphs
+
+
+def _refine_merges_from_words(
+    cells: List[List[Optional[Cell]]],
+    owner: List[List[Tuple[int, int]]],
+    vx: List[float],
+    hy: List[float],
+    words,
+    table_x0: float,
+    table_top: float,
+    table_x1: float,
+    table_bottom: float,
+) -> None:
+    """Grow merged regions when word boxes span multiple grid cells.
+
+    Borderless (text-strategy) tables often report a full grid of 1×1 cells
+    even when a heading visually spans columns. If a word's horizontal extent
+    covers several columns of the same row (and those cells are empty or share
+    the same anchor), merge them under the left-most anchor.
+    """
+    nrows = len(cells)
+    ncols = len(cells[0]) if cells else 0
+    if nrows < 1 or ncols < 2:
+        return
+
+    # Collect candidate horizontal spans per row from words.
+    for w in words:
+        if (w["x1"] < table_x0 - 1 or w["x0"] > table_x1 + 1
+                or w["bottom"] < table_top - 1 or w["top"] > table_bottom + 1):
+            continue
+        cy = (w["top"] + w["bottom"]) / 2
+        ri = _index_of(cy, hy)
+        if ri is None:
+            continue
+        c_start = _index_of(w["x0"] + 0.5, vx)
+        c_end = _index_of(w["x1"] - 0.5, vx)
+        if c_start is None or c_end is None or c_end <= c_start:
+            continue
+
+        # Require the word to cover a meaningful portion of each intermediate
+        # column so we do not merge on a single overflowing glyph.
+        covers_all = True
+        for cc in range(c_start, c_end + 1):
+            col_l, col_r = vx[cc], vx[cc + 1]
+            col_w = max(col_r - col_l, 1e-6)
+            overlap = min(w["x1"], col_r) - max(w["x0"], col_l)
+            if overlap / col_w < SPAN_COVER_RATIO * 0.5 and cc not in (c_start, c_end):
+                covers_all = False
+                break
+            if cc in (c_start, c_end) and overlap / col_w < 0.15:
+                covers_all = False
+                break
+        if not covers_all:
+            continue
+
+        # Anchor = left-most cell owner in this row span that already has content,
+        # else the left-most grid cell.
+        anchor = owner[ri][c_start]
+        ar, ac = anchor
+        # Only expand within the same row for horizontal word spans.
+        if ar != ri:
+            continue
+        cell = cells[ar][ac]
+        if cell is None:
+            # Create a minimal anchor if the grid left a hole.
+            cells[ar][ac] = Cell(text="")
+            cell = cells[ar][ac]
+            owner[ar][ac] = (ar, ac)
+
+        new_c_end = max(ac + cell.colspan - 1, c_end)
+        # Refuse merge if an intermediate cell already has different text.
+        conflict = False
+        for cc in range(ac, new_c_end + 1):
+            or_, oc = owner[ri][cc]
+            other = cells[or_][oc] if or_ == ri else None
+            if other is None or (or_, oc) == (ar, ac):
+                continue
+            if other.text.strip() and other.text.strip() != (cell.text or "").strip():
+                # Different content — not a merge.
+                conflict = True
+                break
+            if other.rowspan > 1:
+                conflict = True
+                break
+        if conflict:
+            continue
+
+        # Absorb intermediate 1×1 cells into the anchor.
+        for cc in range(ac, new_c_end + 1):
+            or_, oc = owner[ri][cc]
+            if (or_, oc) == (ar, ac):
+                continue
+            # Clear absorbed anchor cells (same row only).
+            if or_ == ri and cells[or_][oc] is not None and (or_, oc) != (ar, ac):
+                cells[or_][oc] = None
+            owner[ri][cc] = (ar, ac)
+        cell.colspan = new_c_end - ac + 1
 
 
 def _rgb_to_hex(stroke) -> str:
@@ -470,21 +699,83 @@ def _table_border(table, page) -> dict:
             "border_color": color, "border_dashed": dashed}
 
 
+def _table_bbox_overlap_ratio(a, b) -> float:
+    """Intersection over smaller-area ratio for two (x0, top, x1, bottom) boxes."""
+    ax0, atop, ax1, abottom = a
+    bx0, btop, bx1, bbottom = b
+    ix0, ix1 = max(ax0, bx0), min(ax1, bx1)
+    it0, it1 = max(atop, btop), min(abottom, bbottom)
+    if ix1 <= ix0 or it1 <= it0:
+        return 0.0
+    inter = (ix1 - ix0) * (it1 - it0)
+    area_a = max((ax1 - ax0) * (abottom - atop), 1e-6)
+    area_b = max((bx1 - bx0) * (bbottom - btop), 1e-6)
+    return inter / min(area_a, area_b)
+
+
 def _find_tables(page):
-    settings_lines = {
-        "vertical_strategy": "lines",
-        "horizontal_strategy": "lines",
-        "snap_tolerance": SNAP_TOLERANCE,
-    }
-    settings_text = {
-        "vertical_strategy": "text",
-        "horizontal_strategy": "text",
-        "snap_tolerance": SNAP_TOLERANCE,
-    }
-    tables = page.find_tables(settings_lines)
-    if not tables:
-        tables = page.find_tables(settings_text)
-    return tables
+    """Detect tables with a hybrid strategy.
+
+    1. Line-based (best for ruled forms).
+    2. Mixed lines/text (vertical rules + horizontal text alignment).
+    3. Pure text strategy for borderless grids, only when the region is not
+       already covered by a line-based table.
+    """
+    settings_list = [
+        {
+            "vertical_strategy": "lines",
+            "horizontal_strategy": "lines",
+            "snap_tolerance": SNAP_TOLERANCE,
+            "intersection_tolerance": SNAP_TOLERANCE,
+        },
+        {
+            "vertical_strategy": "lines",
+            "horizontal_strategy": "text",
+            "snap_tolerance": SNAP_TOLERANCE,
+            "intersection_tolerance": SNAP_TOLERANCE,
+            "text_tolerance": 3,
+            "text_x_tolerance": 3,
+            "text_y_tolerance": 3,
+        },
+        {
+            "vertical_strategy": "text",
+            "horizontal_strategy": "lines",
+            "snap_tolerance": SNAP_TOLERANCE,
+            "intersection_tolerance": SNAP_TOLERANCE,
+            "text_tolerance": 3,
+            "text_x_tolerance": 3,
+            "text_y_tolerance": 3,
+        },
+        {
+            "vertical_strategy": "text",
+            "horizontal_strategy": "text",
+            "snap_tolerance": SNAP_TOLERANCE,
+            "intersection_tolerance": SNAP_TOLERANCE,
+            "text_tolerance": 3,
+            "text_x_tolerance": 3,
+            "text_y_tolerance": 3,
+            "min_words_vertical": 2,
+            "min_words_horizontal": 1,
+        },
+    ]
+    kept = []
+    for settings in settings_list:
+        try:
+            found = page.find_tables(settings) or []
+        except Exception:
+            found = []
+        for t in found:
+            bbox = t.bbox
+            # Need at least a 2×1 or 1×2 structure after build; skip tiny noise.
+            if (bbox[2] - bbox[0]) < 20 or (bbox[3] - bbox[1]) < 10:
+                continue
+            if any(
+                _table_bbox_overlap_ratio(bbox, existing.bbox) >= TABLE_OVERLAP_REJECT
+                for existing in kept
+            ):
+                continue
+            kept.append(t)
+    return kept
 
 
 def _in_any_bbox(word: dict, bboxes: List[Tuple[float, float, float, float]]) -> bool:
@@ -768,7 +1059,7 @@ def _extract_hlines(page, table_bboxes) -> List[LineBlock]:
     return blocks
 
 
-def _extract_page(page) -> PageContent:
+def _extract_page(page, *, ocr: bool = False, ocr_lang: Optional[str] = None) -> PageContent:
     # Extract words (with font info) and lines once for the whole page and reuse
     # them for every table and the text blocks, instead of re-parsing per table.
     words = page.extract_words(
@@ -799,17 +1090,44 @@ def _extract_page(page) -> PageContent:
     ordered.sort(key=lambda item: item[0])
     blocks: List = [tb for _, tb in ordered]
 
-    # Scanned / image-only page: no extractable text or tables → embed page image.
+    # Scanned / image-only page: no extractable text or tables.
     has_text_or_table = any(
         isinstance(b, (TextBlock, TableBlock)) for b in blocks
     )
     if not has_text_or_table:
-        full = _render_full_page_image(page)
-        if full is not None:
-            # keep any pure lines if present, but full-page image is primary
-            blocks = [full]
+        ocr_blocks: List[TextBlock] = []
+        if ocr:
+            ocr_blocks = _ocr_page_to_text_blocks(page, lang=ocr_lang)
+        if ocr_blocks:
+            # Prefer editable OCR text; keep a light full-page image behind? No —
+            # OCR text alone is the editable output; caller can re-run without OCR
+            # for image-only. Still attach page image only when OCR found nothing.
+            blocks = sorted(ocr_blocks, key=lambda b: b.top)
+        else:
+            full = _render_full_page_image(page)
+            if full is not None:
+                blocks = [full]
 
     return PageContent(blocks=blocks, width=page_w, height=page_h)
+
+
+def _ocr_page_to_text_blocks(page, *, lang: Optional[str] = None) -> List[TextBlock]:
+    """Rasterise the page and OCR into TextBlocks (empty list if OCR unavailable)."""
+    from .ocr import ocr_available, ocr_image_to_blocks
+
+    if not ocr_available():
+        return []
+    try:
+        w = float(getattr(page, "width", 0) or 0)
+        h = float(getattr(page, "height", 0) or 0)
+        if w <= 0 or h <= 0:
+            return []
+        png = _render_region_png(page, (0, 0, w, h), resolution=OCR_RENDER_DPI)
+        if not png:
+            return []
+        return ocr_image_to_blocks(png, page_width=w, page_height=h, lang=lang)
+    except Exception:
+        return []
 
 
 def parse_page_range(spec: Optional[str], total_pages: int) -> List[int]:
@@ -906,6 +1224,11 @@ def content_warnings(pages: List[PageContent]) -> List[str]:
         warnings.append("empty")
     elif stats["tables"] == 0 and stats["text_blocks"] == 0 and stats["images"] > 0:
         warnings.append("image_only")
+    # OCR produced text from a scan (no native PDF text layer was present for
+    # those pages) — still useful for UI messaging when only OCR text exists
+    # without tables and the source was image-heavy. Detected via flag on blocks.
+    if any(getattr(b, "from_ocr", False) for p in pages for b in p.blocks):
+        warnings.append("ocr_applied")
     return warnings
 
 
@@ -919,15 +1242,26 @@ def _friendly_open_error(exc: BaseException) -> str:
 def extract_document(
     pdf_path: str,
     page_range: Optional[str] = None,
+    *,
+    ocr: bool = False,
+    ocr_lang: Optional[str] = None,
 ) -> List[PageContent]:
     """Extract structured content from a PDF.
 
     ``page_range`` is an optional 1-based spec (e.g. ``"1-3,5"``). When
     omitted, every page is processed.
 
-    Image-only / scanned pages are embedded as full-page rasters so content
-    is not silently lost (OCR is not applied).
+    Image-only / scanned pages are embedded as full-page rasters by default.
+    Pass ``ocr=True`` to run optional Tesseract OCR (requires ``pytesseract``
+    and a system Tesseract install) so scanned text becomes editable.
     """
+    # Env override: PDF2WORD_OCR=1 enables OCR even if the caller omitted it.
+    if not ocr:
+        env = (os.environ.get("PDF2WORD_OCR") or "").strip().lower()
+        ocr = env in ("1", "true", "yes", "on")
+    if ocr_lang is None:
+        ocr_lang = os.environ.get("PDF2WORD_OCR_LANG") or None
+
     pages: List[PageContent] = []
     try:
         pdf = pdfplumber.open(pdf_path)
@@ -941,7 +1275,9 @@ def extract_document(
         indices = parse_page_range(page_range, total)
         for i in indices:
             try:
-                pages.append(_extract_page(pdf.pages[i]))
+                pages.append(
+                    _extract_page(pdf.pages[i], ocr=ocr, ocr_lang=ocr_lang)
+                )
             except Exception as exc:
                 raise ValueError(
                     _friendly_open_error(exc)

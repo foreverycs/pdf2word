@@ -4,6 +4,7 @@ Usage:
   python -m converter input.pdf
   python -m converter input.pdf -o out.docx
   python -m converter input.pdf --pages 1-3,5 --no-page-breaks
+  python -m converter input.pdf --ocr
 """
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ import argparse
 import os
 import sys
 
-from . import content_warnings, count_blocks, extract_document, write_document
+from . import content_warnings, count_blocks, extract_document, ocr_info, write_document
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -35,7 +36,32 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Do not insert Word page breaks between PDF pages",
     )
+    parser.add_argument(
+        "--ocr",
+        action="store_true",
+        help="OCR image-only/scanned pages (needs Tesseract + pytesseract)",
+    )
+    parser.add_argument(
+        "--ocr-lang",
+        default=None,
+        help="Tesseract language(s), e.g. chi_sim+eng (default: env or chi_sim+eng)",
+    )
+    parser.add_argument(
+        "--ocr-info",
+        action="store_true",
+        help="Print OCR engine status and exit",
+    )
     args = parser.parse_args(argv)
+
+    if args.ocr_info:
+        info = ocr_info()
+        print(
+            f"ocr.available={info.get('available')} "
+            f"lang={info.get('lang')} "
+            f"tesseract={info.get('tesseract_cmd') or '-'} "
+            f"version={info.get('version') or '-'}"
+        )
+        return 0 if info.get("available") else 1
 
     pdf_path = args.input
     if not os.path.isfile(pdf_path):
@@ -50,7 +76,12 @@ def main(argv: list[str] | None = None) -> int:
         out = os.path.splitext(pdf_path)[0] + ".docx"
 
     try:
-        pages = extract_document(pdf_path, page_range=args.page_range)
+        pages = extract_document(
+            pdf_path,
+            page_range=args.page_range,
+            ocr=args.ocr,
+            ocr_lang=args.ocr_lang,
+        )
         if not pages:
             print("error: no pages extracted", file=sys.stderr)
             return 1
@@ -70,10 +101,13 @@ def main(argv: list[str] | None = None) -> int:
         f"text={stats['text_blocks']}, images={stats['images']}, "
         f"lines={stats.get('lines', 0)})"
     )
+    if "ocr_applied" in warns:
+        print("note: OCR text applied on scanned page(s)", file=sys.stderr)
     if "image_only" in warns:
         print(
             "warning: pages look image-only / scanned; "
-            "embedded as images (no OCR)",
+            "embedded as images"
+            + (" (pass --ocr for editable text)" if not args.ocr else " (OCR produced no text)"),
             file=sys.stderr,
         )
     if "empty" in warns:

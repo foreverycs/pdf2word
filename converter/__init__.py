@@ -9,8 +9,10 @@ from .pdf_reader import (
     ImageBlock,
     LineBlock,
     Cell,
+    TextRun,
 )
 from .docx_writer import write_document
+from .ocr import ocr_available, ocr_info
 
 __all__ = [
     "extract_document",
@@ -24,4 +26,7 @@ __all__ = [
     "ImageBlock",
     "LineBlock",
     "Cell",
+    "TextRun",
+    "ocr_available",
+    "ocr_info",
 ]
