@@ -116,4 +116,5 @@ def test_api_uploads_list(hist_dir, tmp_path):
 
     home = client.get("/")
     assert home.status_code == 200
-    assert "最近上传" in home.text
+    assert "工具箱" in home.text
+    assert "最近上传" not in home.text

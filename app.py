@@ -19,11 +19,6 @@ from tools import TOOL_REGISTRY, pdf2word_router, word2pdf_router
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
-_TOOL_LABELS = {
-    "pdf2word": "PDF → Word",
-    "word2pdf": "Word → PDF",
-}
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -44,16 +39,10 @@ app.include_router(word2pdf_router)
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    records = list_records(limit=30)
     return templates.TemplateResponse(
         request,
         "index.html",
-        {
-            "tools": TOOL_REGISTRY,
-            "records": records,
-            "tool_labels": _TOOL_LABELS,
-            "retention_days": RETENTION_DAYS,
-        },
+        {"tools": TOOL_REGISTRY},
     )
 
 
