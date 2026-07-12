@@ -71,17 +71,28 @@
       background: #4f46e5; color: #fff; font-size: 15px; cursor: pointer;
     }
     #btn:disabled { background: #c7c9d9; cursor: not-allowed; }
-    #status { margin-top: 14px; font-size: 13px; min-height: 18px; line-height: 1.5; }
+    .progress {
+      display: none; margin-top: 14px; height: 6px; background: #e5e7eb;
+      border-radius: 999px; overflow: hidden;
+    }
+    .progress.show { display: block; }
+    .progress > i {
+      display: block; height: 100%; width: 0%;
+      background: linear-gradient(90deg, #6366f1, #818cf8);
+      transition: width .15s ease;
+    }
+    #status { margin-top: 12px; font-size: 13px; min-height: 18px; line-height: 1.5; }
     .err { color: #dc2626; }
     .ok { color: #16a34a; }
     .info { color: #4b5563; }
+    .warn { color: #d97706; }
   </style>
 </head>
 <body>
   <div class="card">
     <a class="back" href="/">&larr; 返回工具箱</a>
     <h1>PDF → Word 转换器</h1>
-    <p class="sub">适用于纯文本 / 表格类 PDF。支持多文件批量、页码范围与分页保留。</p>
+    <p class="sub">纯文本 / 表格高保真转换；支持多文件、页码范围、图片嵌入。扫描件将按图片写入（无 OCR）。</p>
 
     <label class="drop" id="drop">
       <input type="file" id="file" accept="application/pdf,.pdf" multiple />
@@ -103,12 +114,14 @@
     </div>
 
     <button id="btn" disabled>开始转换</button>
+    <div class="progress" id="progress"><i id="bar"></i></div>
     <div id="status"></div>
   </div>
 
   <script>
     const MAX_FILES = 20;
     const MAX_BYTES = 50 * 1024 * 1024;
+    const LS_KEY = 'pdf2word_opts_v1';
     const fileInput = document.getElementById('file');
     const drop = document.getElementById('drop');
     const list = document.getElementById('list');
@@ -116,9 +129,29 @@
     const status = document.getElementById('status');
     const pageRange = document.getElementById('pageRange');
     const pageBreaks = document.getElementById('pageBreaks');
+    const progress = document.getElementById('progress');
+    const bar = document.getElementById('bar');
 
     /** @type {File[]} */
     let selected = [];
+
+    try {
+      const saved = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+      if (typeof saved.pageRange === 'string') pageRange.value = saved.pageRange;
+      if (typeof saved.pageBreaks === 'boolean') pageBreaks.checked = saved.pageBreaks;
+    } catch (e) { /* ignore */ }
+
+    function persistOpts() {
+      try {
+        localStorage.setItem(LS_KEY, JSON.stringify({
+          pageRange: pageRange.value,
+          pageBreaks: pageBreaks.checked,
+        }));
+      } catch (e) { /* ignore */ }
+    }
+    pageRange.addEventListener('change', persistOpts);
+    pageRange.addEventListener('blur', persistOpts);
+    pageBreaks.addEventListener('change', persistOpts);
 
     function fmtSize(n) {
       if (n < 1024) return n + ' B';
@@ -144,6 +177,15 @@
         return detail.map(d => d.msg || JSON.stringify(d)).join('; ');
       }
       return '转换失败';
+    }
+
+    function setProgress(pct) {
+      progress.classList.add('show');
+      bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+    }
+    function hideProgress() {
+      progress.classList.remove('show');
+      bar.style.width = '0%';
     }
 
     function renderList() {
@@ -220,13 +262,43 @@
       drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('drag'); }));
     drop.addEventListener('drop', e => addFiles(e.dataTransfer.files));
 
+    function xhrPost(url, formData) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', url);
+        xhr.responseType = 'blob';
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            // Reserve 0–70% for upload, 70–95% for server convert (indeterminate pulse).
+            setProgress((e.loaded / e.total) * 70);
+            status.className = 'info';
+            status.textContent = `上传中… ${Math.round((e.loaded / e.total) * 100)}%`;
+          }
+        };
+        xhr.upload.onload = () => {
+          setProgress(75);
+          status.className = 'info';
+          status.textContent = '上传完成，正在转换…';
+        };
+        xhr.onload = () => {
+          setProgress(100);
+          resolve(xhr);
+        };
+        xhr.onerror = () => reject(new Error('网络错误'));
+        xhr.onabort = () => reject(new Error('已取消'));
+        xhr.send(formData);
+      });
+    }
+
     btn.addEventListener('click', async () => {
       if (!selected.length) return;
+      persistOpts();
       btn.disabled = true;
       status.className = 'info';
       status.textContent = selected.length > 1
         ? `批量转换中（${selected.length} 个）…`
-        : '转换中…';
+        : '准备上传…';
+      setProgress(2);
 
       const fd = new FormData();
       const multi = selected.length > 1;
@@ -241,33 +313,47 @@
 
       const url = multi ? '/tools/pdf2word/convert-batch' : '/tools/pdf2word/convert';
       try {
-        const res = await fetch(url, { method: 'POST', body: fd });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(errDetail(err.detail) || `HTTP ${res.status}`);
+        const xhr = await xhrPost(url, fd);
+        if (xhr.status < 200 || xhr.status >= 300) {
+          let msg = `HTTP ${xhr.status}`;
+          try {
+            const text = await xhr.response.text();
+            const err = JSON.parse(text);
+            msg = errDetail(err.detail) || msg;
+          } catch (e) { /* keep msg */ }
+          throw new Error(msg);
         }
-        const blob = await res.blob();
+        const blob = xhr.response;
         const fallback = multi
           ? 'pdf2word_batch.zip'
           : selected[0].name.replace(/\.pdf$/i, '') + '.docx';
         const a = document.createElement('a');
         const href = URL.createObjectURL(blob);
         a.href = href;
-        a.download = downloadName(res.headers.get('content-disposition'), fallback);
+        a.download = downloadName(xhr.getResponseHeader('content-disposition'), fallback);
         a.click();
         URL.revokeObjectURL(href);
 
-        const pages = res.headers.get('X-Pages') || '?';
-        const tables = res.headers.get('X-Tables') || '0';
-        const files = res.headers.get('X-Files');
-        status.className = 'ok';
-        status.textContent = multi
-          ? `完成：${files || selected.length} 个文件，共 ${pages} 页、${tables} 个表格。`
-          : `完成：${pages} 页、${tables} 个表格，文件已下载。`;
+        const pages = xhr.getResponseHeader('X-Pages') || '?';
+        const tables = xhr.getResponseHeader('X-Tables') || '0';
+        const images = xhr.getResponseHeader('X-Images') || '0';
+        const files = xhr.getResponseHeader('X-Files');
+        const warns = (xhr.getResponseHeader('X-Warnings') || '').split(',').filter(Boolean);
+        let line = multi
+          ? `完成：${files || selected.length} 个文件，共 ${pages} 页、${tables} 个表格、${images} 张图。`
+          : `完成：${pages} 页、${tables} 个表格、${images} 张图，文件已下载。`;
+        if (warns.includes('image_only')) {
+          status.className = 'warn';
+          status.textContent = line + ' 提示：检测到纯图片/扫描页，已按图片嵌入（无 OCR）。';
+        } else {
+          status.className = 'ok';
+          status.textContent = line;
+        }
       } catch (e) {
         status.className = 'err';
         status.textContent = e.message || String(e);
       } finally {
+        hideProgress();
         btn.disabled = selected.length === 0;
       }
     });

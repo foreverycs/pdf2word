@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import re
 from collections import Counter
 from dataclasses import dataclass, field
@@ -10,6 +11,16 @@ import pdfplumber
 # ----- tuning constants -----------------------------------------------------
 SNAP_TOLERANCE = 3.0        # grid line snapping tolerance (pt)
 LINE_GAP = 3.0              # max vertical gap (pt) to group words into one text line
+# max horizontal gap (pt) to keep words in the same text segment; larger gaps
+# split one visual line into multiple blocks (e.g. "检验：" … "审核：").
+TEXT_COL_GAP = 40.0
+MIN_IMAGE_AREA = 40.0 * 40.0  # skip decorative icons smaller than this (pt²)
+MAX_IMAGES_PER_PAGE = 15
+IMAGE_RENDER_DPI = 144
+# Thin filled rectangles / strokes treated as horizontal rules (pt).
+HLINE_MAX_THICKNESS = 2.5
+HLINE_MIN_WIDTH = 40.0
+
 
 
 @dataclass
@@ -41,20 +52,53 @@ class TableBlock:
     border_inner: float = 0.5           # inner grid line width (pt)
     border_color: str = "000000"        # border colour as RRGGBB hex
     border_dashed: bool = False         # whether borders are dashed
+    top: float = 0.0                    # vertical position on page (pt)
+    bottom: float = 0.0
+    x0: float = 0.0                     # left edge of table bbox (pt)
 
 
 @dataclass
 class TextBlock:
     text: str
     top: float = 0.0
+    bottom: float = 0.0
+    x0: float = 0.0                     # left edge on the PDF page (pt)
+    x1: float = 0.0                     # right edge on the PDF page (pt)
     font_size: Optional[float] = None
     font_name: Optional[str] = None
     align: str = "left"                 # horizontal alignment: left/center/right
 
 
+
+@dataclass
+class ImageBlock:
+    """Raster image extracted (or rendered) from the PDF page."""
+    image_bytes: bytes                  # PNG bytes
+    top: float = 0.0
+    bottom: float = 0.0
+    x0: float = 0.0                     # left edge on the PDF page (pt)
+    width_pt: float = 0.0               # display width in PDF points
+    height_pt: float = 0.0
+    page_width: float = 0.0             # source page width (pt), for placement
+    align: str = "left"                 # left/center/right relative to page
+
+
+@dataclass
+class LineBlock:
+    """Standalone horizontal rule (header underline, separator, …)."""
+    top: float = 0.0
+    bottom: float = 0.0
+    x0: float = 0.0
+    x1: float = 0.0
+    thickness: float = 0.5              # stroke / fill height (pt)
+    color: str = "000000"
+
+
 @dataclass
 class PageContent:
-    blocks: List  # ordered list of TextBlock | TableBlock (top-to-bottom)
+    blocks: List  # ordered TextBlock | TableBlock | ImageBlock | LineBlock
+    width: float = 0.0                  # page width (pt)
+    height: float = 0.0                 # page height (pt)
 
 
 # ----- low level helpers ----------------------------------------------------
@@ -318,8 +362,13 @@ def _build_table(table, page, words) -> Optional[TableBlock]:
     border = _table_border(table, page)
     col_widths = [round(vx[i + 1] - vx[i], 1) for i in range(ncols)]
     row_heights = [round(hy[i + 1] - hy[i], 1) for i in range(nrows)]
-    return TableBlock(rows=nrows, cols=ncols, cells=cells, owner=owner,
-                      col_widths=col_widths, row_heights=row_heights, **border)
+    tx0, ttop, tx1, tbottom = table.bbox
+    return TableBlock(
+        rows=nrows, cols=ncols, cells=cells, owner=owner,
+        col_widths=col_widths, row_heights=row_heights,
+        top=float(ttop), bottom=float(tbottom), x0=float(tx0),
+        **border,
+    )
 
 
 def _rgb_to_hex(stroke) -> str:
@@ -447,12 +496,34 @@ def _in_any_bbox(word: dict, bboxes: List[Tuple[float, float, float, float]]) ->
     return False
 
 
+def _text_h_align(x0: float, x1: float, page_w: float) -> str:
+    """Infer paragraph alignment from the text bbox relative to the page."""
+    if page_w <= 0:
+        return "left"
+    width = max(x1 - x0, 1.0)
+    left_pad = max(x0, 0.0)
+    right_pad = max(page_w - x1, 0.0)
+    mid = (x0 + x1) / 2.0 / page_w
+    # Full-ish width lines stay left.
+    if width / page_w >= 0.7:
+        return "left"
+    # Balanced side margins or midpoint near page centre → centre.
+    if abs(left_pad - right_pad) <= max(page_w * 0.12, 18.0) or 0.38 < mid < 0.62:
+        # Prefer centre only when not clearly flush-left (logo-adjacent labels
+        # often start past 0.25 of the page but are not titles).
+        if left_pad > page_w * 0.18 or abs(left_pad - right_pad) <= page_w * 0.12:
+            return "center"
+    if left_pad > right_pad * 2.0 and left_pad / page_w > 0.45:
+        return "right"
+    return "left"
+
+
 def _extract_text_blocks(page, table_bboxes, words) -> List[TextBlock]:
     outside = [w for w in words if not _in_any_bbox(w, table_bboxes)]
     if not outside:
         return []
 
-    # group words into lines by vertical proximity, then glue into paragraphs
+    # group words into lines by vertical proximity
     outside.sort(key=lambda w: (round(w["top"]), w["x0"]))
     lines: List[List[dict]] = []
     for w in outside:
@@ -460,32 +531,240 @@ def _extract_text_blocks(page, table_bboxes, words) -> List[TextBlock]:
             lines[-1].append(w)
         else:
             lines.append([w])
-    page_w = getattr(page, "width", None)
-    blocks = []
+    page_w = float(getattr(page, "width", 0) or 0)
+    blocks: List[TextBlock] = []
     for line in lines:
         ordered = sorted(line, key=lambda w: w["x0"])
-        text = _normalize_spacing(_join_words(ordered))
-        top = min(w["top"] for w in line)
-        if text.strip():
+        # Split a visual line into horizontal segments when words sit far apart
+        # (form labels on opposite sides, header title next to logo, etc.).
+        segments: List[List[dict]] = []
+        current: List[dict] = []
+        prev_x1 = None
+        for w in ordered:
+            if current and prev_x1 is not None and (w["x0"] - prev_x1) > TEXT_COL_GAP:
+                segments.append(current)
+                current = []
+            current.append(w)
+            prev_x1 = w["x1"]
+        if current:
+            segments.append(current)
+
+        for seg in segments:
+            text = _normalize_spacing(_join_words(seg))
+            if not text.strip():
+                continue
+            top = min(w["top"] for w in seg)
+            bottom = max(w["bottom"] for w in seg)
+            x0 = min(w["x0"] for w in seg)
+            x1 = max(w["x1"] for w in seg)
             counter: Counter = Counter()
-            for w in line:
+            for w in seg:
                 counter[(round(w.get("size") or 0.0, 1), w.get("fontname") or "")] += 1
             (size, fname), _ = counter.most_common(1)[0]
-            # horizontal alignment: determined by where the first line starts.
-            # A centred title starts near the page centre; a left-aligned body
-            # paragraph starts near the left margin.
-            align = "left"
-            if page_w:
-                left_edge = ordered[0]["x0"] / page_w
-                if 0.25 < left_edge < 0.55:
-                    align = "center"
-                elif left_edge > 0.6:
-                    align = "right"
+            align = _text_h_align(x0, x1, page_w)
             blocks.append(TextBlock(
-                text=text.strip(), top=top,
+                text=text.strip(),
+                top=top, bottom=bottom, x0=x0, x1=x1,
                 font_size=size or None, font_name=fname or None,
                 align=align,
             ))
+    return blocks
+
+
+
+def _bbox_overlap_ratio(a, b) -> float:
+    """Intersection area of ``a`` over area of ``a`` (both x0,top,x1,bottom)."""
+    ax0, atop, ax1, abottom = a
+    bx0, btop, bx1, bbottom = b
+    ix0, ix1 = max(ax0, bx0), min(ax1, bx1)
+    it0, it1 = max(atop, btop), min(abottom, bbottom)
+    if ix1 <= ix0 or it1 <= it0:
+        return 0.0
+    inter = (ix1 - ix0) * (it1 - it0)
+    area = max((ax1 - ax0) * (abottom - atop), 1e-6)
+    return inter / area
+
+
+def _render_region_png(page, bbox, resolution: int = IMAGE_RENDER_DPI) -> Optional[bytes]:
+    """Rasterise a page region to PNG bytes. Returns None on failure."""
+    try:
+        cropped = page.crop(bbox, strict=False)
+        pil = cropped.to_image(resolution=resolution).original
+        if pil is None:
+            return None
+        # Drop nearly-blank crops (e.g. failed extract of vector-only art).
+        extrema = pil.convert("L").getextrema()
+        if extrema is not None and extrema[0] == extrema[1]:
+            return None
+        buf = io.BytesIO()
+        pil.save(buf, format="PNG", optimize=True)
+        return buf.getvalue()
+    except Exception:
+        return None
+
+
+def _image_h_align(x0: float, width: float, page_w: float) -> str:
+    """Infer horizontal placement of an image relative to the page content box."""
+    if page_w <= 0 or width <= 0:
+        return "left"
+    # Near full width → treat as centered full-bleed content.
+    if width / page_w >= 0.85:
+        return "center"
+    left_pad = max(x0, 0.0)
+    right_pad = max(page_w - (x0 + width), 0.0)
+    # Balanced side margins → centre; otherwise keep flush to the denser side.
+    if abs(left_pad - right_pad) <= max(page_w * 0.08, 12.0):
+        return "center"
+    if left_pad > right_pad * 2.0 and left_pad / page_w > 0.2:
+        return "right"
+    return "left"
+
+
+def _extract_images(page, table_bboxes) -> List[ImageBlock]:
+    """Pull embedded image regions that sit outside tables."""
+    raw = getattr(page, "images", None) or []
+    if not raw:
+        return []
+
+    page_w = float(getattr(page, "width", 0) or 0)
+    page_h = float(getattr(page, "height", 0) or 0)
+    page_area = max(page_w * page_h, 1.0)
+    blocks: List[ImageBlock] = []
+
+    # Sort top-to-bottom, left-to-right for stable ordering.
+    ordered_imgs = sorted(
+        raw,
+        key=lambda im: (round(im.get("top", 0), 1), round(im.get("x0", 0), 1)),
+    )
+    for img in ordered_imgs:
+        if len(blocks) >= MAX_IMAGES_PER_PAGE:
+            break
+        try:
+            x0 = float(img["x0"])
+            top = float(img["top"])
+            x1 = float(img["x1"])
+            bottom = float(img["bottom"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        w, h = x1 - x0, bottom - top
+        if w <= 1 or h <= 1 or w * h < MIN_IMAGE_AREA:
+            continue
+        # Skip near-full-page images here; empty-page fallback handles scans.
+        if page_area > 0 and (w * h) / page_area > 0.85:
+            continue
+        bbox = (x0, top, x1, bottom)
+        if any(_bbox_overlap_ratio(bbox, tb) > 0.5 for tb in table_bboxes):
+            continue
+        png = _render_region_png(page, bbox)
+        if not png:
+            continue
+        blocks.append(ImageBlock(
+            image_bytes=png,
+            top=top,
+            bottom=bottom,
+            x0=x0,
+            width_pt=w,
+            height_pt=h,
+            page_width=page_w,
+            align=_image_h_align(x0, w, page_w),
+        ))
+    return blocks
+
+
+def _render_full_page_image(page) -> Optional[ImageBlock]:
+    """Fallback for scanned / image-only pages: embed a full-page raster."""
+    try:
+        w = float(getattr(page, "width", 0) or 0)
+        h = float(getattr(page, "height", 0) or 0)
+        if w <= 0 or h <= 0:
+            return None
+        png = _render_region_png(page, (0, 0, w, h), resolution=IMAGE_RENDER_DPI)
+        if not png:
+            return None
+        return ImageBlock(
+            image_bytes=png,
+            top=0.0,
+            bottom=h,
+            x0=0.0,
+            width_pt=w,
+            height_pt=h,
+            page_width=w,
+            align="center",
+        )
+    except Exception:
+        return None
+
+
+def _extract_hlines(page, table_bboxes) -> List[LineBlock]:
+    """Standalone horizontal rules outside tables (header underlines, etc.).
+
+    Many forms draw the header bar as a very thin filled rectangle rather than
+    a stroked line; both sources are considered.
+    """
+    page_w = float(getattr(page, "width", 0) or 0)
+    candidates: List[tuple] = []  # (top, x0, x1, thickness, color)
+
+    for ln in page.lines or []:
+        try:
+            x0, x1 = float(ln["x0"]), float(ln["x1"])
+            top, bottom = float(ln["top"]), float(ln["bottom"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        width = abs(x1 - x0)
+        height = abs(bottom - top)
+        # horizontal stroke: wide and nearly zero height
+        if width < HLINE_MIN_WIDTH or height > HLINE_MAX_THICKNESS:
+            continue
+        if height < 1e-3 and width >= HLINE_MIN_WIDTH:
+            height = float(ln.get("linewidth") or 0.5)
+        color = _rgb_to_hex(ln.get("stroking_color") or ln.get("stroke"))
+        candidates.append((min(top, bottom), min(x0, x1), max(x0, x1),
+                           max(height, 0.3), color))
+
+    for rct in page.rects or []:
+        try:
+            x0, x1 = float(rct["x0"]), float(rct["x1"])
+            top, bottom = float(rct["top"]), float(rct["bottom"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        width = abs(x1 - x0)
+        height = abs(bottom - top)
+        if width < HLINE_MIN_WIDTH or height <= 0 or height > HLINE_MAX_THICKNESS:
+            continue
+        # Prefer filled thin rects (common for header bars).
+        if not rct.get("fill") and not rct.get("stroke"):
+            continue
+        color_src = rct.get("non_stroking_color") if rct.get("fill") else (
+            rct.get("stroking_color") or rct.get("stroke")
+        )
+        color = _rgb_to_hex(color_src)
+        candidates.append((min(top, bottom), min(x0, x1), max(x0, x1),
+                           height, color))
+
+    blocks: List[LineBlock] = []
+    for top, x0, x1, thick, color in sorted(candidates, key=lambda c: c[0]):
+        # Skip lines that sit on / inside a table (grid lines).
+        mid_y = top + thick / 2.0
+        mid_x = (x0 + x1) / 2.0
+        if any(
+            bx0 - 1 <= mid_x <= bx1 + 1 and btop - 1 <= mid_y <= bbottom + 1
+            for (bx0, btop, bx1, bbottom) in table_bboxes
+        ):
+            continue
+        # Deduplicate near-identical rules.
+        if any(
+            abs(b.top - top) < 1.5 and abs(b.x0 - x0) < 2 and abs(b.x1 - x1) < 2
+            for b in blocks
+        ):
+            continue
+        blocks.append(LineBlock(
+            top=top,
+            bottom=top + thick,
+            x0=x0,
+            x1=x1,
+            thickness=thick,
+            color=color or "000000",
+        ))
     return blocks
 
 
@@ -495,22 +774,42 @@ def _extract_page(page) -> PageContent:
     words = page.extract_words(
         use_text_flow=False, keep_blank_chars=False, extra_attrs=["fontname", "size"]
     )
+    page_w = float(getattr(page, "width", 0) or 0)
+    page_h = float(getattr(page, "height", 0) or 0)
     raw_tables = _find_tables(page)
     tables = []          # list of (top, TableBlock)
     bboxes = []
     for t in raw_tables:
         tb = _build_table(t, page, words)
         if tb is not None:
-            tables.append((t.bbox[1], tb))
+            tables.append((tb.top, tb))
             bboxes.append(t.bbox)
 
     text_blocks = _extract_text_blocks(page, bboxes, words)
+    image_blocks = _extract_images(page, bboxes)
+    line_blocks = _extract_hlines(page, bboxes)
 
-    # interleave text and tables by vertical position (top edge, top-to-bottom)
-    ordered = [(top, tb) for top, tb in tables] + [(b.top, b) for b in text_blocks]
+    # interleave text, tables, images and rules by vertical position
+    ordered = (
+        [(top, tb) for top, tb in tables]
+        + [(b.top, b) for b in text_blocks]
+        + [(b.top, b) for b in image_blocks]
+        + [(b.top, b) for b in line_blocks]
+    )
     ordered.sort(key=lambda item: item[0])
     blocks: List = [tb for _, tb in ordered]
-    return PageContent(blocks=blocks)
+
+    # Scanned / image-only page: no extractable text or tables → embed page image.
+    has_text_or_table = any(
+        isinstance(b, (TextBlock, TableBlock)) for b in blocks
+    )
+    if not has_text_or_table:
+        full = _render_full_page_image(page)
+        if full is not None:
+            # keep any pure lines if present, but full-page image is primary
+            blocks = [full]
+
+    return PageContent(blocks=blocks, width=page_w, height=page_h)
 
 
 def parse_page_range(spec: Optional[str], total_pages: int) -> List[int]:
@@ -577,11 +876,44 @@ def count_blocks(pages: List[PageContent]) -> dict:
     texts = sum(
         1 for p in pages for b in p.blocks if isinstance(b, TextBlock)
     )
+    images = sum(
+        1 for p in pages for b in p.blocks if isinstance(b, ImageBlock)
+    )
+    lines = sum(
+        1 for p in pages for b in p.blocks if isinstance(b, LineBlock)
+    )
     return {
         "pages": len(pages),
         "tables": tables,
         "text_blocks": texts,
+        "images": images,
+        "lines": lines,
     }
+
+
+def content_warnings(pages: List[PageContent]) -> List[str]:
+    """Heuristic warnings for the UI (scanned PDF, empty extract, …)."""
+    stats = count_blocks(pages)
+    warnings: List[str] = []
+    if stats["pages"] == 0:
+        warnings.append("empty")
+        return warnings
+    if (
+        stats["tables"] == 0
+        and stats["text_blocks"] == 0
+        and stats["images"] == 0
+    ):
+        warnings.append("empty")
+    elif stats["tables"] == 0 and stats["text_blocks"] == 0 and stats["images"] > 0:
+        warnings.append("image_only")
+    return warnings
+
+
+def _friendly_open_error(exc: BaseException) -> str:
+    msg = str(exc).lower()
+    if any(k in msg for k in ("password", "encrypt", "crypt")):
+        return "PDF is password-protected; please decrypt it first"
+    return f"Cannot open PDF: {exc}"
 
 
 def extract_document(
@@ -592,12 +924,15 @@ def extract_document(
 
     ``page_range`` is an optional 1-based spec (e.g. ``"1-3,5"``). When
     omitted, every page is processed.
+
+    Image-only / scanned pages are embedded as full-page rasters so content
+    is not silently lost (OCR is not applied).
     """
     pages: List[PageContent] = []
     try:
         pdf = pdfplumber.open(pdf_path)
     except Exception as exc:
-        raise ValueError(f"Cannot open PDF: {exc}") from exc
+        raise ValueError(_friendly_open_error(exc)) from exc
 
     try:
         total = len(pdf.pages)
@@ -605,7 +940,14 @@ def extract_document(
             raise ValueError("PDF has no pages")
         indices = parse_page_range(page_range, total)
         for i in indices:
-            pages.append(_extract_page(pdf.pages[i]))
+            try:
+                pages.append(_extract_page(pdf.pages[i]))
+            except Exception as exc:
+                raise ValueError(
+                    _friendly_open_error(exc)
+                    if any(k in str(exc).lower() for k in ("password", "encrypt", "crypt"))
+                    else f"Failed to read page {i + 1}: {exc}"
+                ) from exc
     finally:
         pdf.close()
     return pages

@@ -488,3 +488,322 @@ def test_write_document_page_breaks():
         for run in p.runs:
             brs = run._element.findall(qn("w:br"))
             assert not any(br.get(qn("w:type")) == "page" for br in brs)
+
+
+def test_image_block_written_to_docx():
+    from converter.pdf_reader import PageContent, ImageBlock
+    from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from PIL import Image
+    import io
+
+    tmp = tempfile.mkdtemp(prefix="pdf2word_test_")
+    docx_path = os.path.join(tmp, "img.docx")
+    buf = io.BytesIO()
+    Image.new("RGB", (40, 30), color=(20, 120, 200)).save(buf, format="PNG")
+    pages = [PageContent(blocks=[
+        ImageBlock(
+            image_bytes=buf.getvalue(), top=0, bottom=150,
+            x0=40, width_pt=200, height_pt=150,
+            page_width=595, align="left",
+        ),
+    ])]
+    write_document(pages, docx_path, page_breaks=False)
+    doc = Document(docx_path)
+    # python-docx stores pictures as inline shapes related to runs
+    assert doc.inline_shapes, "expected an inline image in the docx"
+    # left-aligned, not forced center
+    assert doc.paragraphs[0].alignment == WD_ALIGN_PARAGRAPH.LEFT
+
+
+def test_image_placement_align_and_indent():
+    """Images keep PDF horizontal alignment (center/right) and left indent."""
+    from converter.pdf_reader import PageContent, ImageBlock, TextBlock
+    from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Inches
+    from PIL import Image
+    import io
+
+    def png():
+        buf = io.BytesIO()
+        Image.new("RGB", (20, 20), color=(10, 10, 10)).save(buf, format="PNG")
+        return buf.getvalue()
+
+    tmp = tempfile.mkdtemp(prefix="pdf2word_test_")
+    docx_path = os.path.join(tmp, "place.docx")
+    # page width A4 ≈ 595pt; centered image around x0≈(595-200)/2≈197.5
+    pages = [PageContent(blocks=[
+        TextBlock(text="Title", top=20, bottom=40, align="center"),
+        ImageBlock(
+            image_bytes=png(), top=80, bottom=200,
+            x0=197.5, width_pt=200, height_pt=120,
+            page_width=595, align="center",
+        ),
+        ImageBlock(
+            image_bytes=png(), top=240, bottom=320,
+            x0=40, width_pt=120, height_pt=80,
+            page_width=595, align="left",
+        ),
+        ImageBlock(
+            image_bytes=png(), top=360, bottom=440,
+            x0=400, width_pt=120, height_pt=80,
+            page_width=595, align="right",
+        ),
+    ], width=595, height=842)]
+    write_document(pages, docx_path, page_breaks=False)
+    doc = Document(docx_path)
+
+    # Find paragraphs that contain images (have runs with drawing)
+    img_paras = []
+    for p in doc.paragraphs:
+        for run in p.runs:
+            if run._element.xpath(".//a:blip"):
+                img_paras.append(p)
+                break
+    # fallback: count by inline_shapes is enough; check alignments via paragraphs
+    # with non-empty runs that have pictures
+    assert len(doc.inline_shapes) == 3
+
+    # Collect alignments of paragraphs that host pictures
+    pic_aligns = []
+    for p in doc.paragraphs:
+        has_pic = False
+        for run in p.runs:
+            # w:drawing present
+            if run._element.find(
+                "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing"
+            ) is not None or run._element.findall(
+                ".//{http://schemas.openxmlformats.org/drawingml/2006/main}blip"
+            ):
+                has_pic = True
+                break
+            # python-docx sometimes nests differently — also check rId pict
+            if "graphicData" in run._element.xml:
+                has_pic = True
+                break
+        if has_pic:
+            pic_aligns.append(p.alignment)
+
+    assert WD_ALIGN_PARAGRAPH.CENTER in pic_aligns
+    assert WD_ALIGN_PARAGRAPH.RIGHT in pic_aligns
+    assert WD_ALIGN_PARAGRAPH.LEFT in pic_aligns
+
+    # left-aligned image with x0=40 < 72pt default margin → no extra indent
+    left_paras = [p for p in doc.paragraphs if p.alignment == WD_ALIGN_PARAGRAPH.LEFT
+                  and p.runs and "graphicData" in "".join(r._element.xml for r in p.runs)]
+    # image with x0 larger than margin should get indent — craft one
+    docx2 = os.path.join(tmp, "indent.docx")
+    write_document([PageContent(blocks=[
+        ImageBlock(
+            image_bytes=png(), top=0, bottom=80,
+            x0=144, width_pt=100, height_pt=80,  # 2" from page edge
+            page_width=595, align="left",
+        ),
+    ])], docx2, page_breaks=False)
+    doc2 = Document(docx2)
+    indented = None
+    for p in doc2.paragraphs:
+        if p.runs and "graphicData" in "".join(r._element.xml for r in p.runs):
+            indented = p
+            break
+    assert indented is not None
+    assert indented.paragraph_format.left_indent is not None
+    # extra indent ≈ (144 - section_margin_pt) / 72; section margin is 0.7"
+    # → (144 - 50.4) / 72 = 1.3 inches
+    assert abs(indented.paragraph_format.left_indent.inches - 1.3) < 0.05
+
+
+
+def test_content_warnings_image_only():
+    from converter import content_warnings, count_blocks
+    from converter.pdf_reader import PageContent, ImageBlock
+
+    pages = [PageContent(blocks=[
+        ImageBlock(image_bytes=b"\x89PNG", top=0, width_pt=100, height_pt=100),
+    ])]
+    stats = count_blocks(pages)
+    assert stats["images"] == 1
+    assert stats["text_blocks"] == 0
+    assert "image_only" in content_warnings(pages)
+    assert content_warnings([PageContent(blocks=[])]) == ["empty"]
+
+
+def test_scanned_page_embeds_full_image():
+    """A PDF page that is only a bitmap (no text) should become an ImageBlock."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.utils import ImageReader
+    from PIL import Image
+    import io
+    from converter.pdf_reader import ImageBlock
+    from converter import content_warnings
+
+    tmp = tempfile.mkdtemp(prefix="pdf2word_test_")
+    pdf_path = os.path.join(tmp, "scan.pdf")
+    docx_path = os.path.join(tmp, "scan.docx")
+
+    img_buf = io.BytesIO()
+    Image.new("RGB", (200, 280), color=(240, 240, 240)).save(img_buf, format="PNG")
+    img_buf.seek(0)
+
+    c = canvas.Canvas(pdf_path, pagesize=A4)
+    # nearly full-page image, no text operators
+    c.drawImage(ImageReader(img_buf), 40, 40, width=500, height=700)
+    c.save()
+
+    pages = extract_document(pdf_path)
+    assert pages
+    # either embedded image region or full-page fallback
+    images = [b for b in pages[0].blocks if isinstance(b, ImageBlock)]
+    assert images, "expected image content from scanned PDF"
+    assert "image_only" in content_warnings(pages)
+    # placement metadata should be present
+    img = images[0]
+    assert img.width_pt > 0 and img.height_pt > 0
+    assert img.page_width > 0
+    assert img.align in ("left", "center", "right")
+
+    write_document(pages, docx_path)
+    from docx import Document
+    doc = Document(docx_path)
+    assert doc.inline_shapes
+
+
+def test_image_h_align_helper():
+    from converter.pdf_reader import _image_h_align
+
+    # centered: equal side pads
+    assert _image_h_align(197.5, 200, 595) == "center"
+    # left: small x0
+    assert _image_h_align(40, 120, 595) == "left"
+    # right: large left pad
+    assert _image_h_align(420, 120, 595) == "right"
+    # near full-width
+    assert _image_h_align(10, 560, 595) == "center"
+
+
+def test_header_logo_and_title_same_row():
+    """Logo + company name share one paragraph; signature labels too — not tables."""
+    from converter.docx_writer import _group_horizontal_rows
+    from converter.pdf_reader import ImageBlock, TextBlock, PageContent, LineBlock
+    from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml.ns import qn
+    from PIL import Image
+    import io
+
+    buf = io.BytesIO()
+    Image.new("RGB", (40, 20), color=(200, 0, 0)).save(buf, format="PNG")
+    logo = ImageBlock(
+        image_bytes=buf.getvalue(),
+        top=42.6, bottom=77.6, x0=90, width_pt=76.6, height_pt=35,
+        page_width=595, align="left",
+    )
+    company = TextBlock(
+        text="甘肃博贞原生物乳业有限公司",
+        top=68.3, bottom=80.3, x0=168, x1=324,
+        font_size=12, align="center",
+    )
+    hline = LineBlock(top=83.0, bottom=83.7, x0=90, x1=505.3, thickness=0.72)
+    title = TextBlock(
+        text="生产用水检验记录",
+        top=92.4, bottom=106.4, x0=241.7, x1=353.8,
+        font_size=14, align="center",
+    )
+    sign_l = TextBlock(text="检验：", top=352.6, bottom=363, x0=111, x1=140, align="left")
+    sign_r = TextBlock(text="审核：", top=352.6, bottom=363, x0=331, x1=360, align="center")
+
+    rows = _group_horizontal_rows([logo, company, hline, title, sign_l, sign_r])
+    assert len(rows) == 4
+    assert len(rows[0]) == 2 and rows[0][0] is logo and rows[0][1] is company
+    assert rows[1] == [hline]
+    assert rows[2] == [title]
+    assert len(rows[3]) == 2 and rows[3][0] is sign_l and rows[3][1] is sign_r
+
+    tmp = tempfile.mkdtemp(prefix="pdf2word_test_")
+    docx_path = os.path.join(tmp, "header.docx")
+    write_document(
+        [PageContent(
+            blocks=[logo, company, hline, title, sign_l, sign_r],
+            width=595, height=842,
+        )],
+        docx_path,
+        page_breaks=False,
+    )
+    doc = Document(docx_path)
+
+    # Layout rows must be normal paragraphs, never layout tables.
+    assert len(doc.tables) == 0, "logo/signature rows must not use layout tables"
+    assert doc.inline_shapes, "expected logo image inline in a paragraph"
+
+    combo = None
+    for p in doc.paragraphs:
+        xml = "".join(r._element.xml for r in p.runs)
+        if "graphicData" in xml and "博贞" in (p.text or ""):
+            combo = p
+            break
+    assert combo is not None, "logo and company name must be in the same paragraph"
+
+    # Header underline must become a paragraph bottom border.
+    bordered = []
+    for p in doc.paragraphs:
+        pPr = p._p.find(qn("w:pPr"))
+        if pPr is not None and pPr.find(qn("w:pBdr")) is not None:
+            bordered.append(p)
+    assert bordered, "expected a paragraph with bottom border for the header rule"
+
+    title_paras = [p for p in doc.paragraphs if "生产用水检验记录" in (p.text or "")]
+    assert title_paras
+    assert title_paras[0].alignment == WD_ALIGN_PARAGRAPH.CENTER
+    # Title→table style: no huge trailing space on the title paragraph
+    sa = title_paras[0].paragraph_format.space_after
+    assert sa is None or sa.pt <= 2.0
+
+    sign_para = None
+    for p in doc.paragraphs:
+        t = p.text or ""
+        if "检验" in t and "审核" in t:
+            sign_para = p
+            break
+    assert sign_para is not None, "检验/审核 must share one paragraph"
+
+
+def test_title_table_gap_no_spacer_paragraph():
+    """Title→table gap must use a compact spacer (exact 1pt line), not a full blank line."""
+    from converter.pdf_reader import PageContent, TextBlock, TableBlock, Cell
+    from docx import Document
+    from docx.enum.text import WD_LINE_SPACING
+
+    cells = [[Cell(text="A"), Cell(text="B")], [Cell(text="C"), Cell(text="D")]]
+    owner = [[(r, c) for c in range(2)] for r in range(2)]
+    title = TextBlock(
+        text="生产用水检验记录", top=92, bottom=106, x0=240, x1=350,
+        font_size=14, align="center",
+    )
+    # PDF gap title.bottom→table.top ≈ 40pt (as in the sample form)
+    table = TableBlock(
+        rows=2, cols=2, cells=cells, owner=owner,
+        col_widths=[100, 100], row_heights=[18, 18],
+        top=146.4, bottom=200, x0=84,
+    )
+    tmp = tempfile.mkdtemp(prefix="pdf2word_test_")
+    docx_path = os.path.join(tmp, "gap.docx")
+    write_document(
+        [PageContent(blocks=[title, table], width=595, height=842)],
+        docx_path, page_breaks=False,
+    )
+    doc = Document(docx_path)
+    assert len(doc.tables) == 1
+    # compact spacer: exact 1pt line spacing + space_before (not a full text line)
+    compact = [
+        p for p in doc.paragraphs
+        if not (p.text or "").strip()
+        and p.paragraph_format.line_spacing_rule == WD_LINE_SPACING.EXACTLY
+    ]
+    assert compact, "expected a compact spacer paragraph before the table"
+    # first cell must NOT absorb the gap as cell padding
+    cell_sb = doc.tables[0].cell(0, 0).paragraphs[0].paragraph_format.space_before
+    assert cell_sb is None or cell_sb.pt < 6.0
+
+
