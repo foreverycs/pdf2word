@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import os
 from contextlib import asynccontextmanager
+from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from storage import (
@@ -14,10 +16,32 @@ from storage import (
     list_records,
     resolve_stored,
 )
-from tools import TOOL_REGISTRY, pdf2word_router, word2pdf_router
+from tools import (
+    TOOL_REGISTRY,
+    TOOL_ROUTERS,
+    get_category,
+    nav_categories,
+    tools_by_category,
+)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
+
+
+def _page_ctx(
+    *,
+    active_nav: str = "home",
+    extra: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Common template context for pages that share the top menu."""
+    ctx: Dict[str, Any] = {
+        "nav_items": nav_categories(),
+        "active_nav": active_nav,
+        "tool_count": len(TOOL_REGISTRY),
+    }
+    if extra:
+        ctx.update(extra)
+    return ctx
 
 
 @asynccontextmanager
@@ -30,11 +54,16 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="工具箱", version="0.5.0", lifespan=lifespan)
+app = FastAPI(title="工具集", version="0.6.1", lifespan=lifespan)
 
-# Register tool routers
-app.include_router(pdf2word_router)
-app.include_router(word2pdf_router)
+# Static assets (shared CSS, etc.)
+static_dir = os.path.join(BASE_DIR, "static")
+if os.path.isdir(static_dir):
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+# Register all tool routers
+for router in TOOL_ROUTERS:
+    app.include_router(router)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -42,7 +71,47 @@ async def index(request: Request):
     return templates.TemplateResponse(
         request,
         "index.html",
-        {"tools": TOOL_REGISTRY},
+        _page_ctx(active_nav="home"),
+    )
+
+
+@app.get("/c/{category_id}", response_class=HTMLResponse)
+async def category_page(request: Request, category_id: str):
+    """Dedicated page for one menu column (文档处理 / 编码工具 / …)."""
+    cat = get_category(category_id)
+    if cat is None:
+        raise HTTPException(status_code=404, detail="栏目不存在")
+    return templates.TemplateResponse(
+        request,
+        "category.html",
+        _page_ctx(
+            active_nav=category_id,
+            extra={"category": cat},
+        ),
+    )
+
+
+# Friendly aliases (optional bookmarks)
+@app.get("/documents", response_class=HTMLResponse)
+async def documents_alias():
+    return RedirectResponse(url="/c/document", status_code=307)
+
+
+@app.get("/coding", response_class=HTMLResponse)
+async def coding_alias():
+    return RedirectResponse(url="/c/coding", status_code=307)
+
+
+@app.get("/api/tools")
+async def api_tools():
+    """Machine-readable tool catalog (for future clients)."""
+    return JSONResponse(
+        {
+            "version": app.version,
+            "categories": tools_by_category(),
+            "nav": nav_categories(),
+            "tools": TOOL_REGISTRY,
+        }
     )
 
 
@@ -53,11 +122,21 @@ async def health():
 
     w2p = engine_info()
     ocr = ocr_info()
+    cats = tools_by_category()
     return JSONResponse(
         {
             "status": "ok",
             "version": app.version,
             "tools": len(TOOL_REGISTRY),
+            "categories": [
+                {
+                    "id": c["id"],
+                    "name": c["name"],
+                    "count": len(c["tools"]),
+                    "route": c.get("route"),
+                }
+                for c in cats
+            ],
             "word2pdf": {
                 "ready": w2p.get("ready", False),
                 "engines": w2p.get("engines") or [],

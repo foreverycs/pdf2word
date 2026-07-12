@@ -245,7 +245,13 @@ def test_home_lists_word2pdf():
     from app import app
 
     client = TestClient(app)
-    r = client.get("/")
+    # Home exposes category menus; tools appear on the category page.
+    home = client.get("/")
+    assert home.status_code == 200
+    assert "文档处理" in home.text
+    assert "/c/document" in home.text
+
+    r = client.get("/c/document")
     assert r.status_code == 200
     assert "Word 转 PDF" in r.text
     assert "/tools/word2pdf" in r.text

@@ -1,11 +1,19 @@
-# 工具箱（PDF ↔ Word）
+# 工具集（Toolkit Suite）
 
-基于 **FastAPI** 的小工具集合，当前内置：
+基于 **FastAPI** 的可扩展工具集。工具按**集合（category）**注册，当前包含：
+
+### 文档处理
 
 | 工具 | 说明 |
 |------|------|
 | **PDF 转 Word** | 纯文本 / 表格 PDF → 高保真 `.docx`（合并单元格、嵌套样式、图片、可选 OCR） |
-| **Word 转 PDF** | `.docx` / `.doc` → PDF（LibreOffice 优先，Windows 可回退 Microsoft Word；宏/ActiveX 安全降级） |
+| **Word 转 PDF** | `.docx` / `.doc` → PDF（LibreOffice 优先，Windows 可回退 Microsoft Word） |
+
+### 编码工具
+
+| 工具 | 说明 |
+|------|------|
+| **Base64 编解码** | 文本 / 文件 Base64 编码与解码（标准 / URL-safe、多字符集、换行折叠） |
 
 ## 特性
 
@@ -55,7 +63,13 @@ python app.py
 uvicorn app:app --host 127.0.0.1 --port 8000
 ```
 
-浏览器打开 http://127.0.0.1:8000 ，进入「PDF 转 Word」上传即可。
+浏览器打开 http://127.0.0.1:8000 。顶部菜单进入 **文档处理** / **编码工具** 栏目页，再打开具体工具。
+
+| 栏目 | 路径 |
+|------|------|
+| 首页 | `/` |
+| 文档处理 | `/c/document`（别名 `/documents`） |
+| 编码工具 | `/c/coding`（别名 `/coding`） |
 
 ### 命令行
 
@@ -137,7 +151,8 @@ docker compose down
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| `GET` | `/health` | 健康检查 |
+| `GET` | `/health` | 健康检查（含工具分类） |
+| `GET` | `/api/tools` | 工具目录 JSON（分类 + 列表） |
 | `GET` | `/api/uploads` | 最近上传记录 JSON |
 | `GET` | `/api/uploads/{id}/download` | 下载归档的输入文件 |
 | `GET` | `/tools/pdf2word` | PDF→Word 页面 |
@@ -148,6 +163,11 @@ docker compose down
 | `GET` | `/tools/word2pdf/status` | 引擎状态 JSON |
 | `POST` | `/tools/word2pdf/convert` | 单 Word → `.pdf` |
 | `POST` | `/tools/word2pdf/convert-batch` | 多 Word → `.zip` |
+| `GET` | `/tools/base64` | Base64 编解码页面 |
+| `POST` | `/tools/base64/encode` | 文本/文件 → Base64 |
+| `POST` | `/tools/base64/decode` | Base64 → 文本/hex |
+| `POST` | `/tools/base64/probe` | 粗检是否像 Base64 |
+| `GET` | `/tools/base64/presets` | 选项与示例 |
 
 ### PDF → Word 表单字段
 
@@ -175,30 +195,43 @@ docker compose down
 pytest tests -q
 ```
 
+### Base64 表单字段
+
+| 字段 | 说明 |
+|------|------|
+| `text` | 明文（encode）或 Base64 串（decode） |
+| `file` | 可选，encode 时上传文件（≤ 5 MB） |
+| `charset` | `utf-8` / `utf-16` / `latin-1` / `ascii`（decode 可 `none`） |
+| `variant` | `standard` 或 `urlsafe` |
+| `wrap` | encode 换行宽度，`0` / `64` / `76` |
+| `strict` | decode 严格校验 |
+
+## 扩展新工具
+
+1. 在 `tools/` 下新增路由模块（如 `tools/my_tool.py`）。
+2. 在 `tools/__init__.py` 的 `TOOL_REGISTRY` 增加条目，并设置 `category`（`document` / `coding` 或新分类）。
+3. 将 router 加入 `TOOL_ROUTERS`；如需新集合，先在 `TOOL_CATEGORIES` 注册。
+4. 页面模板放 `templates/tools/`；共享样式见 `static/css/tokens.css`。
+
 ## 目录结构
 
 ```
-app.py                      FastAPI 入口（工具箱首页）
+app.py                      FastAPI 入口（工具集首页）
 tools/
-  __init__.py               工具注册表 TOOL_REGISTRY
-  pdf2word.py               /tools/pdf2word 页面与转换 API
-  word2pdf.py               /tools/word2pdf 页面与转换 API
-converter/
-  __main__.py               PDF→Word CLI
-  pdf_reader.py             提取文本 / 表格 / 图片 / 横线
-  docx_writer.py            生成 Word
-  ocr.py                    可选 Tesseract OCR
-word2pdf/
-  __main__.py               Word→PDF CLI
-  converter.py              LibreOffice / MS Word 引擎
-storage/
-  history.py                上传归档与 5 天清理
-file/                       上传记录目录（挂载持久化，gitignore）
+  __init__.py               分类 + TOOL_REGISTRY + TOOL_ROUTERS
+  pdf2word.py               文档：PDF→Word
+  word2pdf.py               文档：Word→PDF
+  base64_tool.py            编码：Base64
+coding/
+  base64_codec.py           Base64 核心逻辑
+converter/                  PDF→Word 核心
+word2pdf/                   Word→PDF 引擎
+storage/                    上传归档
+static/css/tokens.css       共享设计 token
 templates/
-  index.html                工具箱首页
-  tools/pdf2word.html       PDF 转 Word 上传页
-  tools/word2pdf.html       Word 转 PDF 上传页
-tests/                      单元测试
+  index.html                分类首页
+  tools/*.html              各工具页
+tests/
 Dockerfile / docker-compose.yml
 ```
 

@@ -4,36 +4,22 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="Word 转 PDF — LibreOffice 高保真转换" />
-  <title>Word 转 PDF — 工具箱</title>
+  <title>Word 转 PDF — 工具集</title>
+  <link rel="stylesheet" href="/static/css/tokens.css" />
+  <link rel="stylesheet" href="/static/css/layout.css" />
   <style>
     :root {
-      color-scheme: light;
-      --ink: #0b1220;
-      --ink-2: #1e293b;
-      --muted: #64748b;
-      --muted-2: #94a3b8;
-      --surface: rgba(255, 255, 255, 0.82);
-      --line: rgba(15, 23, 42, 0.08);
       --c: #059669;
       --c2: #10b981;
       --c-soft: #ecfdf5;
       --c-border: #a7f3d0;
-      --shadow: 0 16px 48px rgba(15, 23, 42, 0.1);
-      --shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.04);
-      --radius: 22px;
-      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
-        "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: var(--font);
       color: var(--ink);
       min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 28px 16px;
-      background: #eef1f8;
+      background: var(--bg);
     }
     .bg {
       position: fixed; inset: 0; z-index: 0; pointer-events: none;
@@ -55,9 +41,9 @@
     }
 
     .shell {
-      position: relative; z-index: 1;
-      width: min(540px, 100%);
-      animation: enter 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+      position: relative;
+      z-index: 1;
+      width: 100%;
     }
     .nav {
       display: flex; align-items: center; justify-content: space-between;
@@ -257,13 +243,14 @@
 </head>
 <body>
   <div class="bg" aria-hidden="true"></div>
+  <div class="tool-shell">
   <div class="shell">
     <div class="nav">
-      <a class="back" href="/">
+      <a class="back" href="/c/document">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M19 12H5M11 18l-6-6 6-6"/>
         </svg>
-        返回工具箱
+        文档处理
       </a>
       <span class="chip">Word → PDF</span>
     </div>
@@ -323,6 +310,7 @@
       <div class="progress" id="progress"><i id="bar"></i></div>
       <div id="status"></div>
     </div>
+  </div>
   </div>
 
   <script>

@@ -1,0 +1,30 @@
+/* Shared design tokens — 工具集 */
+:root {
+  color-scheme: light;
+  --ink: #0b1220;
+  --ink-2: #1e293b;
+  --muted: #64748b;
+  --muted-2: #94a3b8;
+  --surface: rgba(255, 255, 255, 0.78);
+  --surface-solid: #ffffff;
+  --line: rgba(15, 23, 42, 0.08);
+  --bg: #eef1f8;
+  --indigo: #4f46e5;
+  --violet: #7c3aed;
+  --emerald: #059669;
+  --amber: #d97706;
+  --sky: #0284c7;
+  --radius: 22px;
+  --radius-sm: 14px;
+  --shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.04);
+  --shadow: 0 12px 40px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 24px 60px rgba(15, 23, 42, 0.14);
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+
+  /* Content column — home / category / tool pages share this width */
+  --page-max: 1080px;
+  --page-pad-x: 22px;
+  --page-pad-y: 18px;
+}

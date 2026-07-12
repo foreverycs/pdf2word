@@ -1,0 +1,58 @@
+{# Top navigation: 首页 + each category as a real page link.
+   Expects: nav_items (list), active_nav ('home' | category id)
+#}
+<header class="topbar" role="banner">
+  <a class="topbar-brand" href="/">
+    <div class="topbar-logo" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/>
+        <path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/>
+      </svg>
+    </div>
+    <div class="topbar-brand-text">
+      <div class="topbar-brand-name">工具集</div>
+      <div class="topbar-brand-sub">Toolkit Suite</div>
+    </div>
+  </a>
+
+  <button type="button" class="topbar-toggle" id="navToggle" aria-expanded="false" aria-controls="topMenu">
+    菜单
+  </button>
+
+  <nav class="topbar-menu" id="topMenu" aria-label="主导航栏目">
+    <a class="topbar-link{% if active_nav == 'home' %} active{% endif %}"
+       href="/"
+       {% if active_nav == 'home' %}aria-current="page"{% endif %}>
+      <span class="menu-icon" aria-hidden="true">⌂</span>
+      首页
+    </a>
+    {% for item in nav_items %}
+    <a class="topbar-link{% if active_nav == item.id %} active{% endif %}"
+       href="{{ item.route }}"
+       {% if active_nav == item.id %}aria-current="page"{% endif %}>
+      <span class="menu-icon" aria-hidden="true">{{ item.icon }}</span>
+      {{ item.name }}
+      <span class="menu-count">{{ item.tool_count }}</span>
+    </a>
+    {% endfor %}
+  </nav>
+
+  <div class="topbar-right">
+    <div class="topbar-pill" title="服务状态">
+      <span class="topbar-dot" aria-hidden="true"></span>
+      <span>在线</span>
+    </div>
+  </div>
+</header>
+<script>
+(function () {
+  var btn = document.getElementById('navToggle');
+  var menu = document.getElementById('topMenu');
+  if (!btn || !menu) return;
+  btn.addEventListener('click', function () {
+    var open = menu.classList.toggle('is-open');
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn.textContent = open ? '收起' : '菜单';
+  });
+})();
+</script>

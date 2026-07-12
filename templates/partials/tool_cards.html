@@ -1,0 +1,32 @@
+{# Tool cards grid. Expects: tools (list) #}
+<div class="tool-grid">
+  {% for tool in tools %}
+  <a class="tool-card" data-slug="{{ tool.slug }}" data-accent="{{ tool.accent or 'indigo' }}" href="{{ tool.route }}">
+    <div class="glow" aria-hidden="true"></div>
+    <div class="tool-card-top">
+      <div class="tool-icon" aria-hidden="true">{{ tool.icon }}</div>
+      <span class="tool-chip">{{ tool.badge or '工具' }}</span>
+    </div>
+    <div class="tool-card-body">
+      <h3>{{ tool.name }}</h3>
+      <p>{{ tool.description }}</p>
+    </div>
+    {% if tool.features %}
+    <div class="tool-feats">
+      {% for f in tool.features %}
+      <span class="tool-feat">{{ f }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <div class="tool-card-foot">
+      <span class="tool-cta">
+        {{ tool.cta or '打开' }}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M5 12h14M13 6l6 6-6 6"/>
+        </svg>
+      </span>
+      <span class="tool-hint">免费</span>
+    </div>
+  </a>
+  {% endfor %}
+</div>

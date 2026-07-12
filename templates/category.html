@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="{{ category.description }} — 工具集" />
+  <title>{{ category.name }} — 工具集</title>
+  <link rel="stylesheet" href="/static/css/tokens.css" />
+  <link rel="stylesheet" href="/static/css/layout.css" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font);
+      color: var(--ink);
+      min-height: 100vh;
+      background: var(--bg);
+      overflow-x: hidden;
+    }
+    .cat-hero {
+      margin-bottom: 28px;
+      animation: enter 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+    .breadcrumb {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      font-size: 12.5px;
+      color: var(--muted-2);
+      margin-bottom: 16px;
+    }
+    .breadcrumb a {
+      color: var(--muted);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .breadcrumb a:hover { color: var(--indigo); }
+    .breadcrumb .sep { opacity: 0.5; }
+    .breadcrumb .current { color: var(--ink-2); font-weight: 700; }
+
+    .cat-hero-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      padding: 22px 22px 20px;
+      border-radius: var(--radius);
+      background: #fff;
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+    }
+    .cat-hero-icon {
+      width: 56px;
+      height: 56px;
+      border-radius: 16px;
+      display: grid;
+      place-items: center;
+      font-size: 28px;
+      flex-shrink: 0;
+      background: var(--soft, #eef2ff);
+      border: 1px solid color-mix(in srgb, var(--c, #4f46e5) 16%, transparent);
+    }
+    .cat-hero-card[data-accent="indigo"] { --c: #4f46e5; --soft: #eef2ff; }
+    .cat-hero-card[data-accent="amber"] { --c: #d97706; --soft: #fffbeb; }
+    .cat-hero-card[data-accent="emerald"] { --c: #059669; --soft: #ecfdf5; }
+    .cat-hero h1 {
+      font-size: clamp(1.4rem, 3vw, 1.75rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 6px;
+    }
+    .cat-hero .en {
+      font-size: 12px;
+      font-weight: 650;
+      color: var(--c, #4f46e5);
+      margin-bottom: 8px;
+    }
+    .cat-hero p {
+      font-size: 14px;
+      line-height: 1.65;
+      color: var(--muted);
+      max-width: 560px;
+    }
+    .section-label {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #475569;
+      letter-spacing: 0.02em;
+    }
+    .section-label::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(90deg, var(--line), transparent);
+    }
+    .empty {
+      text-align: center;
+      padding: 48px 20px;
+      background: #fff;
+      border: 1px dashed #e2e8f0;
+      border-radius: var(--radius);
+      color: var(--muted);
+      font-size: 14px;
+    }
+    @keyframes enter {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+  <div class="site-bg" aria-hidden="true"></div>
+  <div class="site-page">
+    {% include "partials/top_nav.html" %}
+
+    <div class="cat-hero">
+      <nav class="breadcrumb" aria-label="面包屑">
+        <a href="/">首页</a>
+        <span class="sep">/</span>
+        <span class="current">{{ category.name }}</span>
+      </nav>
+      <div class="cat-hero-card" data-accent="{{ category.accent or 'indigo' }}">
+        <div class="cat-hero-icon" aria-hidden="true">{{ category.icon }}</div>
+        <div>
+          <div class="en">{{ category.name_en }}</div>
+          <h1>{{ category.name }}</h1>
+          <p>{{ category.lead or category.description }}</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-label">本栏目工具（{{ category.tools|length }}）</div>
+
+    {% if category.tools %}
+      {% with tools = category.tools %}
+        {% include "partials/tool_cards.html" %}
+      {% endwith %}
+    {% else %}
+      <div class="empty">该栏目暂无工具，敬请期待。</div>
+    {% endif %}
+
+    <footer class="site-footer">
+      <div class="site-footer-inner">
+        <div class="site-footer-brand">{{ category.name }}</div>
+        <div class="site-footer-note">
+          <a href="/" style="color:inherit;text-decoration:none;font-weight:600">返回首页</a>
+          · 使用顶部菜单切换其他栏目
+        </div>
+      </div>
+    </footer>
+  </div>
+</body>
+</html>
