@@ -513,9 +513,99 @@ def _extract_page(page) -> PageContent:
     return PageContent(blocks=blocks)
 
 
-def extract_document(pdf_path: str) -> List[PageContent]:
+def parse_page_range(spec: Optional[str], total_pages: int) -> List[int]:
+    """Parse a 1-based page range like ``1-3,5,7-9`` into 0-based indices.
+
+    Empty / whitespace ``spec`` means all pages. Raises ``ValueError`` on
+    malformed input or out-of-range numbers.
+    """
+    if total_pages < 1:
+        raise ValueError("PDF has no pages")
+    if not spec or not str(spec).strip():
+        return list(range(total_pages))
+
+    indices: List[int] = []
+    seen = set()
+    for part in str(spec).split(","):
+        token = part.strip()
+        if not token:
+            continue
+        if "-" in token:
+            ends = token.split("-", 1)
+            if len(ends) != 2 or not ends[0].strip() or not ends[1].strip():
+                raise ValueError(f"Invalid page range: {token!r}")
+            try:
+                start = int(ends[0].strip())
+                end = int(ends[1].strip())
+            except ValueError as exc:
+                raise ValueError(f"Invalid page range: {token!r}") from exc
+            if start < 1 or end < 1 or start > end:
+                raise ValueError(f"Invalid page range: {token!r}")
+            for n in range(start, end + 1):
+                if n > total_pages:
+                    raise ValueError(
+                        f"Page {n} out of range (PDF has {total_pages} pages)"
+                    )
+                idx = n - 1
+                if idx not in seen:
+                    seen.add(idx)
+                    indices.append(idx)
+        else:
+            try:
+                n = int(token)
+            except ValueError as exc:
+                raise ValueError(f"Invalid page number: {token!r}") from exc
+            if n < 1 or n > total_pages:
+                raise ValueError(
+                    f"Page {n} out of range (PDF has {total_pages} pages)"
+                )
+            idx = n - 1
+            if idx not in seen:
+                seen.add(idx)
+                indices.append(idx)
+
+    if not indices:
+        raise ValueError("No pages selected")
+    return indices
+
+
+def count_blocks(pages: List[PageContent]) -> dict:
+    """Return simple conversion stats for response headers / UI."""
+    tables = sum(
+        1 for p in pages for b in p.blocks if isinstance(b, TableBlock)
+    )
+    texts = sum(
+        1 for p in pages for b in p.blocks if isinstance(b, TextBlock)
+    )
+    return {
+        "pages": len(pages),
+        "tables": tables,
+        "text_blocks": texts,
+    }
+
+
+def extract_document(
+    pdf_path: str,
+    page_range: Optional[str] = None,
+) -> List[PageContent]:
+    """Extract structured content from a PDF.
+
+    ``page_range`` is an optional 1-based spec (e.g. ``"1-3,5"``). When
+    omitted, every page is processed.
+    """
     pages: List[PageContent] = []
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            pages.append(_extract_page(page))
+    try:
+        pdf = pdfplumber.open(pdf_path)
+    except Exception as exc:
+        raise ValueError(f"Cannot open PDF: {exc}") from exc
+
+    try:
+        total = len(pdf.pages)
+        if total == 0:
+            raise ValueError("PDF has no pages")
+        indices = parse_page_range(page_range, total)
+        for i in indices:
+            pages.append(_extract_page(pdf.pages[i]))
+    finally:
+        pdf.close()
     return pages

@@ -17,13 +17,13 @@
     .card {
       margin: auto;
       background: #fff; padding: 32px 36px; border-radius: 16px;
-      width: min(460px, 92vw);
+      width: min(520px, 94vw);
       box-shadow: 0 10px 40px rgba(0,0,0,.08);
     }
     .back { display: inline-block; margin-bottom: 16px; color: #4f46e5; text-decoration: none; font-size: 13px; }
     .back:hover { text-decoration: underline; }
     h1 { font-size: 20px; margin: 0 0 6px; }
-    p.sub { margin: 0 0 24px; color: #6b7280; font-size: 13px; }
+    p.sub { margin: 0 0 20px; color: #6b7280; font-size: 13px; line-height: 1.5; }
     .drop {
       display: block; width: 100%;
       border: 2px dashed #c7d2fe; border-radius: 12px; padding: 28px 16px;
@@ -32,94 +32,243 @@
     .drop:hover, .drop.drag { border-color: #6366f1; background: #eef2ff; }
     .drop strong { color: #4f46e5; }
     input[type=file] { display: none; }
-    button {
+    .file-list {
+      margin: 12px 0 0; padding: 0; list-style: none; max-height: 160px; overflow: auto;
+    }
+    .file-list li {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 12px; color: #374151; padding: 6px 8px;
+      background: #f9fafb; border-radius: 8px; margin-bottom: 6px;
+    }
+    .file-list .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-list .fsize { color: #9ca3af; flex-shrink: 0; }
+    .file-list button {
+      width: auto; margin: 0; padding: 2px 8px; font-size: 12px;
+      background: transparent; color: #9ca3af; border-radius: 6px;
+    }
+    .file-list button:hover { color: #dc2626; background: #fef2f2; }
+    .opts {
+      margin-top: 16px; display: grid; gap: 12px;
+      padding: 14px 14px 4px; background: #f9fafb; border-radius: 12px;
+    }
+    .opts label.field {
+      display: flex; flex-direction: column; gap: 4px;
+      font-size: 12px; color: #4b5563;
+    }
+    .opts input[type=text] {
+      padding: 8px 10px; border: 1px solid #e5e7eb; border-radius: 8px;
+      font-size: 13px; outline: none;
+    }
+    .opts input[type=text]:focus { border-color: #a5b4fc; box-shadow: 0 0 0 3px #eef2ff; }
+    .opts .hint { color: #9ca3af; font-size: 11px; }
+    .opts .check {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 13px; color: #374151; cursor: pointer;
+    }
+    .opts .check input { width: 15px; height: 15px; accent-color: #4f46e5; }
+    #btn {
       width: 100%; margin-top: 18px; padding: 11px; border: 0; border-radius: 10px;
       background: #4f46e5; color: #fff; font-size: 15px; cursor: pointer;
     }
-    button:disabled { background: #c7c9d9; cursor: not-allowed; }
-    #status { margin-top: 14px; font-size: 13px; min-height: 18px; }
+    #btn:disabled { background: #c7c9d9; cursor: not-allowed; }
+    #status { margin-top: 14px; font-size: 13px; min-height: 18px; line-height: 1.5; }
     .err { color: #dc2626; }
     .ok { color: #16a34a; }
+    .info { color: #4b5563; }
   </style>
 </head>
 <body>
   <div class="card">
     <a class="back" href="/">&larr; 返回工具箱</a>
     <h1>PDF → Word 转换器</h1>
-    <p class="sub">适用于纯文本 / 表格类 PDF，高保真还原合并单元格与样式。</p>
+    <p class="sub">适用于纯文本 / 表格类 PDF。支持多文件批量、页码范围与分页保留。</p>
+
     <label class="drop" id="drop">
-      <input type="file" id="file" accept="application/pdf" />
+      <input type="file" id="file" accept="application/pdf,.pdf" multiple />
       <div>点击或拖拽 <strong>PDF 文件</strong> 到此处</div>
-      <div id="name" style="margin-top:8px;color:#4f46e5;font-size:13px;"></div>
+      <div style="margin-top:6px;color:#9ca3af;font-size:12px;">最多 20 个，每个 ≤ 50 MB</div>
     </label>
+    <ul class="file-list" id="list"></ul>
+
+    <div class="opts">
+      <label class="field">
+        页码范围（可选）
+        <input type="text" id="pageRange" placeholder="例如 1-3,5 （留空=全部）" />
+        <span class="hint">1 起始；逗号分隔；支持区间。批量时对每个文件生效。</span>
+      </label>
+      <label class="check">
+        <input type="checkbox" id="pageBreaks" checked />
+        在 Word 中按 PDF 分页插入分页符
+      </label>
+    </div>
+
     <button id="btn" disabled>开始转换</button>
     <div id="status"></div>
   </div>
 
   <script>
+    const MAX_FILES = 20;
+    const MAX_BYTES = 50 * 1024 * 1024;
     const fileInput = document.getElementById('file');
     const drop = document.getElementById('drop');
+    const list = document.getElementById('list');
     const btn = document.getElementById('btn');
-    const name = document.getElementById('name');
     const status = document.getElementById('status');
-    let selected = null;
+    const pageRange = document.getElementById('pageRange');
+    const pageBreaks = document.getElementById('pageBreaks');
 
-    function downloadName(disposition) {
-      if (!disposition) return "output.docx";
+    /** @type {File[]} */
+    let selected = [];
+
+    function fmtSize(n) {
+      if (n < 1024) return n + ' B';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+      return (n / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    function downloadName(disposition, fallback) {
+      if (!disposition) return fallback;
       const star = /filename\*=(?:UTF-8'')?([^;]+)/i.exec(disposition);
       if (star) {
-        try { return decodeURIComponent(star[1].replace(/\+/g, " ")); }
+        try { return decodeURIComponent(star[1].replace(/\+/g, ' ')); }
         catch (e) { /* fall through */ }
       }
       const ascii = /filename="?([^";]+)"?/i.exec(disposition);
       if (ascii) return ascii[1];
-      return "output.docx";
+      return fallback;
     }
 
-    fileInput.addEventListener('change', e => {
-      selected = e.target.files[0];
-      name.textContent = selected ? selected.name : '';
-      btn.disabled = !selected;
-      status.textContent = '';
-    });
+    function errDetail(detail) {
+      if (typeof detail === 'string') return detail;
+      if (Array.isArray(detail)) {
+        return detail.map(d => d.msg || JSON.stringify(d)).join('; ');
+      }
+      return '转换失败';
+    }
+
+    function renderList() {
+      list.innerHTML = '';
+      selected.forEach((f, i) => {
+        const li = document.createElement('li');
+        const name = document.createElement('span');
+        name.className = 'fname';
+        name.title = f.name;
+        name.textContent = f.name;
+        const size = document.createElement('span');
+        size.className = 'fsize';
+        size.textContent = fmtSize(f.size);
+        const rm = document.createElement('button');
+        rm.type = 'button';
+        rm.textContent = '移除';
+        rm.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          selected.splice(i, 1);
+          renderList();
+          status.textContent = '';
+          status.className = '';
+        });
+        li.append(name, size, rm);
+        list.appendChild(li);
+      });
+      btn.disabled = selected.length === 0;
+      btn.textContent = selected.length > 1
+        ? `开始转换（${selected.length} 个文件 → ZIP）`
+        : '开始转换';
+    }
+
+    function addFiles(fileList) {
+      const incoming = Array.from(fileList || []);
+      const errors = [];
+      for (const f of incoming) {
+        if (!f.name.toLowerCase().endsWith('.pdf')) {
+          errors.push(`${f.name}: 仅支持 PDF`);
+          continue;
+        }
+        if (f.size > MAX_BYTES) {
+          errors.push(`${f.name}: 超过 50 MB`);
+          continue;
+        }
+        if (f.size === 0) {
+          errors.push(`${f.name}: 空文件`);
+          continue;
+        }
+        const dup = selected.some(s => s.name === f.name && s.size === f.size);
+        if (dup) continue;
+        if (selected.length >= MAX_FILES) {
+          errors.push(`最多 ${MAX_FILES} 个文件`);
+          break;
+        }
+        selected.push(f);
+      }
+      renderList();
+      if (errors.length) {
+        status.className = 'err';
+        status.textContent = errors.join('；');
+      } else {
+        status.textContent = '';
+        status.className = '';
+      }
+      fileInput.value = '';
+    }
+
+    fileInput.addEventListener('change', e => addFiles(e.target.files));
 
     ['dragover', 'dragenter'].forEach(ev =>
       drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('drag'); }));
     ['dragleave', 'drop'].forEach(ev =>
       drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('drag'); }));
-    drop.addEventListener('drop', e => {
-      selected = e.dataTransfer.files[0];
-      name.textContent = selected ? selected.name : '';
-      btn.disabled = !selected;
-    });
+    drop.addEventListener('drop', e => addFiles(e.dataTransfer.files));
 
     btn.addEventListener('click', async () => {
-      if (!selected) return;
+      if (!selected.length) return;
       btn.disabled = true;
-      status.className = '';
-      status.textContent = '转换中…';
+      status.className = 'info';
+      status.textContent = selected.length > 1
+        ? `批量转换中（${selected.length} 个）…`
+        : '转换中…';
+
       const fd = new FormData();
-      fd.append('file', selected);
+      const multi = selected.length > 1;
+      if (multi) {
+        selected.forEach(f => fd.append('files', f));
+      } else {
+        fd.append('file', selected[0]);
+      }
+      const range = pageRange.value.trim();
+      if (range) fd.append('page_range', range);
+      fd.append('page_breaks', pageBreaks.checked ? 'true' : 'false');
+
+      const url = multi ? '/tools/pdf2word/convert-batch' : '/tools/pdf2word/convert';
       try {
-        const res = await fetch('/tools/pdf2word/convert', { method: 'POST', body: fd });
+        const res = await fetch(url, { method: 'POST', body: fd });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
-          throw new Error(err.detail || '转换失败');
+          throw new Error(errDetail(err.detail) || `HTTP ${res.status}`);
         }
         const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = downloadName(res.headers.get("content-disposition"));
+        const fallback = multi
+          ? 'pdf2word_batch.zip'
+          : selected[0].name.replace(/\.pdf$/i, '') + '.docx';
+        const a = document.createElement('a');
+        const href = URL.createObjectURL(blob);
+        a.href = href;
+        a.download = downloadName(res.headers.get('content-disposition'), fallback);
         a.click();
-        URL.revokeObjectURL(url);
+        URL.revokeObjectURL(href);
+
+        const pages = res.headers.get('X-Pages') || '?';
+        const tables = res.headers.get('X-Tables') || '0';
+        const files = res.headers.get('X-Files');
         status.className = 'ok';
-        status.textContent = '转换完成，文件已下载。';
+        status.textContent = multi
+          ? `完成：${files || selected.length} 个文件，共 ${pages} 页、${tables} 个表格。`
+          : `完成：${pages} 页、${tables} 个表格，文件已下载。`;
       } catch (e) {
         status.className = 'err';
-        status.textContent = e.message;
+        status.textContent = e.message || String(e);
       } finally {
-        btn.disabled = false;
+        btn.disabled = selected.length === 0;
       }
     });
   </script>

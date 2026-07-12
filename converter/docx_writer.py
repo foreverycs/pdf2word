@@ -212,14 +212,26 @@ def _write_table(doc: Document, table: TableBlock) -> None:
     _set_table_dims(grid, table.col_widths, table.row_heights)
 
 
-def write_document(pages: List[PageContent], output_path: str) -> None:
+def write_document(
+    pages: List[PageContent],
+    output_path: str,
+    *,
+    page_breaks: bool = True,
+) -> None:
+    """Write extracted pages to a .docx file.
+
+    When ``page_breaks`` is True (default), a page break is inserted between
+    consecutive PDF pages so the Word document mirrors the source pagination.
+    """
     doc = Document()
     style = doc.styles["Normal"]
     style.font.name = DEFAULT_FONT
     style.font.size = Pt(DEFAULT_SIZE)
     style.element.rPr.rFonts.set(qn("w:eastAsia"), DEFAULT_FONT)
 
-    for page in pages:
+    for i, page in enumerate(pages):
+        if page_breaks and i > 0:
+            doc.add_page_break()
         for block in page.blocks:
             if isinstance(block, TextBlock):
                 p = doc.add_paragraph()

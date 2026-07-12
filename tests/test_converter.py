@@ -398,3 +398,93 @@ def test_fidelity_cjk_spacing_and_title_center():
     title_para = doc.paragraphs[0]
     assert title_para.alignment == WD_ALIGN_PARAGRAPH.CENTER
     assert " " not in title_para.text, f"unexpected space in docx title: {title_para.text!r}"
+
+
+# ----- page range / pagination / stats --------------------------------------
+
+def test_parse_page_range():
+    from converter import parse_page_range
+
+    assert parse_page_range(None, 5) == [0, 1, 2, 3, 4]
+    assert parse_page_range("  ", 3) == [0, 1, 2]
+    assert parse_page_range("1,3", 5) == [0, 2]
+    assert parse_page_range("2-4", 5) == [1, 2, 3]
+    assert parse_page_range("1-2,5", 5) == [0, 1, 4]
+    # duplicates are collapsed, order preserved
+    assert parse_page_range("3,1,3", 5) == [2, 0]
+
+    with pytest.raises(ValueError):
+        parse_page_range("0", 5)
+    with pytest.raises(ValueError):
+        parse_page_range("6", 5)
+    with pytest.raises(ValueError):
+        parse_page_range("3-1", 5)
+    with pytest.raises(ValueError):
+        parse_page_range("abc", 5)
+    with pytest.raises(ValueError):
+        parse_page_range("1-", 5)
+
+
+def _make_multipage_pdf(path: str) -> None:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+
+    c = canvas.Canvas(path, pagesize=A4)
+    for i in range(1, 4):
+        c.drawString(100, 750, f"PageMarker{i}")
+        c.showPage()
+    c.save()
+
+
+def test_extract_page_range_and_stats():
+    from converter import count_blocks
+
+    tmp = tempfile.mkdtemp(prefix="pdf2word_test_")
+    pdf_path = os.path.join(tmp, "multi.pdf")
+    _make_multipage_pdf(pdf_path)
+
+    pages = extract_document(pdf_path, page_range="1,3")
+    assert len(pages) == 2
+    texts = [
+        b.text for p in pages for b in p.blocks if isinstance(b, TextBlock)
+    ]
+    joined = " ".join(texts)
+    assert "PageMarker1" in joined
+    assert "PageMarker3" in joined
+    assert "PageMarker2" not in joined
+
+    stats = count_blocks(pages)
+    assert stats["pages"] == 2
+    assert stats["text_blocks"] >= 2
+
+
+def test_write_document_page_breaks():
+    from converter.pdf_reader import PageContent, TextBlock
+    from docx import Document
+    from docx.oxml.ns import qn
+
+    tmp = tempfile.mkdtemp(prefix="pdf2word_test_")
+    docx_path = os.path.join(tmp, "pages.docx")
+    pages = [
+        PageContent(blocks=[TextBlock(text="First page", top=0)]),
+        PageContent(blocks=[TextBlock(text="Second page", top=0)]),
+    ]
+    write_document(pages, docx_path, page_breaks=True)
+    doc = Document(docx_path)
+    # at least one paragraph should contain a page break run
+    has_break = False
+    for p in doc.paragraphs:
+        for run in p.runs:
+            brs = run._element.findall(qn("w:br"))
+            if any(br.get(qn("w:type")) == "page" for br in brs):
+                has_break = True
+    assert has_break, "expected a page break between PDF pages"
+
+    # page_breaks=False should not insert one
+    docx2 = os.path.join(tmp, "nobreak.docx")
+    write_document(pages, docx2, page_breaks=False)
+    doc2 = Document(docx2)
+    for p in doc2.paragraphs:
+        for run in p.runs:
+            brs = run._element.findall(qn("w:br"))
+            assert not any(br.get(qn("w:type")) == "page" for br in brs)
