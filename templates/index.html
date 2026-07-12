@@ -3,51 +3,697 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>工具箱</title>
+  <meta name="description" content="文档转换工具箱 — PDF 与 Word 双向转换" />
+  <title>工具箱 · 文档转换</title>
   <style>
-    :root { color-scheme: light; }
-    * { box-sizing: border-box; }
-    html, body { height: 100%; }
-    body {
-      margin: 0; font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
-      background: linear-gradient(135deg, #eef2ff 0%, #f4f6fb 100%);
-      color: #1f2937; min-height: 100vh; padding: 48px 24px;
+    :root {
+      color-scheme: light;
+      --ink: #0b1220;
+      --ink-2: #1e293b;
+      --muted: #64748b;
+      --muted-2: #94a3b8;
+      --surface: rgba(255, 255, 255, 0.78);
+      --surface-solid: #ffffff;
+      --line: rgba(15, 23, 42, 0.08);
+      --indigo: #4f46e5;
+      --violet: #7c3aed;
+      --emerald: #059669;
+      --radius: 22px;
+      --shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.04);
+      --shadow: 0 12px 40px rgba(15, 23, 42, 0.08);
+      --shadow-lg: 0 24px 60px rgba(15, 23, 42, 0.14);
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
     }
-    .container { max-width: 720px; margin: 0 auto; }
-    h1 { font-size: 24px; margin: 0 0 8px; }
-    p.sub { margin: 0 0 32px; color: #6b7280; font-size: 14px; }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--font);
+      color: var(--ink);
+      min-height: 100vh;
+      background: #eef1f8;
+      overflow-x: hidden;
+    }
+
+    /* Animated mesh background */
+    .bg {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(ellipse 80% 60% at 15% 10%, rgba(99, 102, 241, 0.28), transparent 55%),
+        radial-gradient(ellipse 70% 50% at 90% 5%, rgba(16, 185, 129, 0.18), transparent 50%),
+        radial-gradient(ellipse 60% 45% at 70% 90%, rgba(139, 92, 246, 0.14), transparent 55%),
+        radial-gradient(ellipse 50% 40% at 10% 85%, rgba(59, 130, 246, 0.12), transparent 50%),
+        linear-gradient(165deg, #f0f4ff 0%, #eef2f7 40%, #f5f7fb 100%);
+    }
+    .bg::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.4) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.4) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, black 20%, transparent 75%);
+      opacity: 0.55;
+    }
+    .orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(60px);
+      opacity: 0.55;
+      animation: float 18s ease-in-out infinite;
+    }
+    .orb-a {
+      width: 280px; height: 280px;
+      top: 8%; left: -4%;
+      background: #a5b4fc;
+      animation-delay: 0s;
+    }
+    .orb-b {
+      width: 220px; height: 220px;
+      top: 12%; right: -2%;
+      background: #6ee7b7;
+      animation-delay: -6s;
+    }
+    .orb-c {
+      width: 200px; height: 200px;
+      bottom: 10%; left: 30%;
+      background: #c4b5fd;
+      animation-delay: -12s;
+    }
+
+    .page {
+      position: relative;
+      z-index: 1;
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 28px 22px 48px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* —— Nav —— */
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 16px;
+      margin-bottom: 48px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      backdrop-filter: blur(16px) saturate(1.2);
+      -webkit-backdrop-filter: blur(16px) saturate(1.2);
+      box-shadow: var(--shadow-sm);
+      animation: enter 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      text-decoration: none;
+      color: inherit;
+    }
+    .logo {
+      width: 38px;
+      height: 38px;
+      border-radius: 11px;
+      background: linear-gradient(145deg, #818cf8 0%, #4f46e5 55%, #7c3aed 100%);
+      box-shadow:
+        0 6px 16px rgba(79, 70, 229, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.25);
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+    }
+    .logo svg { width: 20px; height: 20px; }
+    .brand-name {
+      font-size: 15px;
+      font-weight: 750;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+    }
+    .brand-sub {
+      font-size: 11px;
+      color: var(--muted-2);
+      margin-top: 1px;
+    }
+    .nav-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #334155;
+      background: #fff;
+      border: 1px solid var(--line);
+      padding: 7px 12px;
+      border-radius: 999px;
+    }
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #22c55e;
+      box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2);
+      animation: pulse 2.2s ease-in-out infinite;
+    }
+
+    /* —— Hero —— */
+    .hero {
+      text-align: center;
+      max-width: 640px;
+      margin: 0 auto 44px;
+      animation: enter 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.05s both;
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 650;
+      color: #4338ca;
+      background: linear-gradient(180deg, #fff 0%, #f8fafc 100%);
+      border: 1px solid rgba(99, 102, 241, 0.2);
+      padding: 7px 14px 7px 10px;
+      border-radius: 999px;
+      margin-bottom: 22px;
+      box-shadow: var(--shadow-sm);
+    }
+    .hero-badge-icon {
+      width: 22px;
+      height: 22px;
+      border-radius: 7px;
+      background: linear-gradient(135deg, #e0e7ff, #c7d2fe);
+      display: grid;
+      place-items: center;
+      font-size: 12px;
+    }
+    .hero h1 {
+      font-size: clamp(2rem, 5.2vw, 2.85rem);
+      font-weight: 800;
+      letter-spacing: -0.035em;
+      line-height: 1.12;
+      color: var(--ink);
+      margin-bottom: 16px;
+    }
+    .hero h1 em {
+      font-style: normal;
+      background: linear-gradient(115deg, #4f46e5 0%, #7c3aed 50%, #059669 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .hero-lead {
+      font-size: 16px;
+      line-height: 1.7;
+      color: var(--muted);
+      max-width: 420px;
+      margin: 0 auto 28px;
+    }
+
+    .stats {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+    }
+    .stat {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      box-shadow: var(--shadow-sm);
+    }
+    .stat-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 9px;
+      display: grid;
+      place-items: center;
+      font-size: 15px;
+      flex-shrink: 0;
+    }
+    .stat:nth-child(1) .stat-icon { background: #eef2ff; }
+    .stat:nth-child(2) .stat-icon { background: #ecfdf5; }
+    .stat:nth-child(3) .stat-icon { background: #f5f3ff; }
+    .stat-text {
+      text-align: left;
+      line-height: 1.25;
+    }
+    .stat-label {
+      font-size: 11px;
+      color: var(--muted-2);
+      font-weight: 500;
+    }
+    .stat-value {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--ink-2);
+    }
+
+    /* —— Section —— */
+    .section-label {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 18px;
+      animation: enter 0.65s cubic-bezier(0.22, 1, 0.36, 1) 0.1s both;
+    }
+    .section-label h2 {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #475569;
+      white-space: nowrap;
+    }
+    .section-label::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(90deg, var(--line), transparent);
+    }
+
+    /* —— Cards —— */
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-      gap: 16px;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 18px;
+      animation: enter 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.14s both;
     }
-    .tool-card {
-      display: block; background: #fff; border-radius: 14px; padding: 24px 20px;
-      box-shadow: 0 4px 20px rgba(0,0,0,.06); text-decoration: none; color: inherit;
-      transition: transform .12s, box-shadow .12s; cursor: pointer;
+
+    .card {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      min-height: 280px;
+      padding: 26px 24px 22px;
+      border-radius: var(--radius);
+      text-decoration: none;
+      color: inherit;
+      background: var(--surface-solid);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      isolation: isolate;
+      transition:
+        transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+        box-shadow 0.28s ease,
+        border-color 0.28s ease;
     }
-    .tool-card:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 8px 30px rgba(0,0,0,.10);
+    .card:hover {
+      transform: translateY(-6px) scale(1.01);
+      box-shadow: var(--shadow-lg);
     }
-    .tool-icon { font-size: 32px; margin-bottom: 10px; }
-    .tool-name { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
-    .tool-desc { font-size: 12px; color: #6b7280; line-height: 1.5; }
+    .card:focus-visible {
+      outline: 2px solid var(--indigo);
+      outline-offset: 3px;
+    }
+
+    /* decorative mesh per card */
+    .card .glow {
+      position: absolute;
+      width: 220px;
+      height: 220px;
+      border-radius: 50%;
+      top: -80px;
+      right: -60px;
+      opacity: 0.55;
+      filter: blur(2px);
+      pointer-events: none;
+      z-index: 0;
+      transition: transform 0.4s ease, opacity 0.4s ease;
+    }
+    .card:hover .glow {
+      transform: scale(1.15) translate(-8px, 8px);
+      opacity: 0.75;
+    }
+    .card .ring {
+      position: absolute;
+      width: 140px;
+      height: 140px;
+      border-radius: 50%;
+      border: 1px solid currentColor;
+      opacity: 0.08;
+      top: -30px;
+      right: -20px;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .card[data-slug="pdf2word"] {
+      --c: #4f46e5;
+      --c2: #8b5cf6;
+      --soft: #eef2ff;
+      --soft2: #e0e7ff;
+    }
+    .card[data-slug="pdf2word"] .glow {
+      background: radial-gradient(circle, #c7d2fe 0%, transparent 70%);
+    }
+    .card[data-slug="pdf2word"] .ring { color: #4f46e5; }
+    .card[data-slug="pdf2word"]:hover {
+      border-color: rgba(79, 70, 229, 0.22);
+    }
+
+    .card[data-slug="word2pdf"] {
+      --c: #059669;
+      --c2: #10b981;
+      --soft: #ecfdf5;
+      --soft2: #d1fae5;
+    }
+    .card[data-slug="word2pdf"] .glow {
+      background: radial-gradient(circle, #a7f3d0 0%, transparent 70%);
+    }
+    .card[data-slug="word2pdf"] .ring { color: #059669; }
+    .card[data-slug="word2pdf"]:hover {
+      border-color: rgba(5, 150, 105, 0.22);
+    }
+
+    .card-top {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 22px;
+    }
+    .icon-wrap {
+      width: 58px;
+      height: 58px;
+      border-radius: 18px;
+      display: grid;
+      place-items: center;
+      font-size: 28px;
+      background: linear-gradient(155deg, var(--c2), var(--c));
+      box-shadow:
+        0 12px 28px rgba(15, 23, 42, 0.14),
+        inset 0 1px 0 rgba(255, 255, 255, 0.3);
+      line-height: 1;
+    }
+    .card[data-slug="pdf2word"] .icon-wrap {
+      box-shadow: 0 12px 28px rgba(79, 70, 229, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    }
+    .card[data-slug="word2pdf"] .icon-wrap {
+      box-shadow: 0 12px 28px rgba(5, 150, 105, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    }
+    .chip {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      color: var(--c);
+      background: var(--soft);
+      border: 1px solid rgba(15, 23, 42, 0.06);
+      padding: 6px 11px;
+      border-radius: 999px;
+    }
+
+    .card-body {
+      position: relative;
+      z-index: 1;
+      flex: 1;
+    }
+    .card-body h3 {
+      font-size: 1.25rem;
+      font-weight: 750;
+      letter-spacing: -0.025em;
+      color: var(--ink);
+      margin-bottom: 10px;
+    }
+    .card-body p {
+      font-size: 13.5px;
+      line-height: 1.65;
+      color: var(--muted);
+    }
+
+    .features {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 16px 0 20px;
+    }
+    .feat {
+      font-size: 11px;
+      font-weight: 600;
+      color: #475569;
+      background: #f8fafc;
+      border: 1px solid #eef2f7;
+      padding: 4px 9px;
+      border-radius: 8px;
+    }
+
+    .card-foot {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 16px;
+      border-top: 1px solid #f1f5f9;
+      margin-top: auto;
+    }
+    .cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #fff;
+      background: linear-gradient(135deg, var(--c), var(--c2));
+      padding: 10px 16px;
+      border-radius: 12px;
+      box-shadow: 0 6px 16px rgba(15, 23, 42, 0.14);
+      transition: gap 0.2s ease, box-shadow 0.2s ease;
+    }
+    .card[data-slug="pdf2word"] .cta {
+      box-shadow: 0 6px 16px rgba(79, 70, 229, 0.32);
+    }
+    .card[data-slug="word2pdf"] .cta {
+      box-shadow: 0 6px 16px rgba(5, 150, 105, 0.32);
+    }
+    .card:hover .cta {
+      gap: 12px;
+    }
+    .card[data-slug="pdf2word"]:hover .cta {
+      box-shadow: 0 8px 22px rgba(79, 70, 229, 0.4);
+    }
+    .card[data-slug="word2pdf"]:hover .cta {
+      box-shadow: 0 8px 22px rgba(5, 150, 105, 0.4);
+    }
+    .cta svg {
+      width: 15px;
+      height: 15px;
+    }
+    .hint {
+      font-size: 11px;
+      color: var(--muted-2);
+      font-weight: 500;
+    }
+
+    /* —— Footer —— */
+    .footer {
+      margin-top: auto;
+      padding-top: 52px;
+      text-align: center;
+      animation: enter 0.65s cubic-bezier(0.22, 1, 0.36, 1) 0.2s both;
+    }
+    .footer-inner {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      padding: 16px 28px;
+      border-radius: 16px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+    .footer-brand {
+      font-size: 13px;
+      font-weight: 700;
+      color: #475569;
+    }
+    .footer-note {
+      font-size: 12px;
+      color: var(--muted-2);
+    }
+
+    @keyframes enter {
+      from {
+        opacity: 0;
+        transform: translateY(16px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    @keyframes float {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      33% { transform: translate(18px, -14px) scale(1.05); }
+      66% { transform: translate(-12px, 10px) scale(0.96); }
+    }
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2); }
+      50% { box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.12); }
+    }
+
+    @media (max-width: 720px) {
+      .grid { grid-template-columns: 1fr; }
+      .nav { margin-bottom: 36px; }
+      .hero { margin-bottom: 32px; }
+      .card { min-height: auto; }
+      .nav-right .pill span { display: none; }
+    }
+    @media (max-width: 420px) {
+      .page { padding: 16px 14px 36px; }
+      .stats { flex-direction: column; align-items: stretch; }
+      .stat { justify-content: flex-start; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .nav, .hero, .section-label, .grid, .footer { animation: none; }
+      .orb { animation: none; }
+      .dot { animation: none; }
+      .card, .cta, .card .glow { transition: none; }
+    }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>工具箱</h1>
-    <p class="sub">小工具集合，持续更新中。</p>
+  <div class="bg" aria-hidden="true">
+    <div class="orb orb-a"></div>
+    <div class="orb orb-b"></div>
+    <div class="orb orb-c"></div>
+  </div>
+
+  <div class="page">
+    <nav class="nav" aria-label="主导航">
+      <a class="brand" href="/">
+        <div class="logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <path d="M14 2v6h6M9 15h6M9 11h2"/>
+          </svg>
+        </div>
+        <div>
+          <div class="brand-name">工具箱</div>
+          <div class="brand-sub">Document Toolkit</div>
+        </div>
+      </a>
+      <div class="nav-right">
+        <div class="pill">
+          <span class="dot" aria-hidden="true"></span>
+          <span>服务正常</span>
+        </div>
+      </div>
+    </nav>
+
+    <header class="hero">
+      <div class="hero-badge">
+        <span class="hero-badge-icon" aria-hidden="true">✦</span>
+        文档双向转换 · 即开即用
+      </div>
+      <h1>把文档转换<br>变得<em>简单可靠</em></h1>
+      <p class="hero-lead">
+        PDF 与 Word 互转，支持批量与页码选择。本地处理，无需安装客户端。
+      </p>
+      <div class="stats">
+        <div class="stat">
+          <div class="stat-icon" aria-hidden="true">📄</div>
+          <div class="stat-text">
+            <div class="stat-label">格式支持</div>
+            <div class="stat-value">PDF · DOCX · DOC</div>
+          </div>
+        </div>
+        <div class="stat">
+          <div class="stat-icon" aria-hidden="true">⚡</div>
+          <div class="stat-text">
+            <div class="stat-label">批量处理</div>
+            <div class="stat-value">最多 20 个 / 次</div>
+          </div>
+        </div>
+        <div class="stat">
+          <div class="stat-icon" aria-hidden="true">🔒</div>
+          <div class="stat-text">
+            <div class="stat-label">隐私</div>
+            <div class="stat-value">服务端转换</div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="section-label">
+      <h2>选择工具</h2>
+    </div>
+
     <div class="grid">
       {% for tool in tools %}
-      <a class="tool-card" href="{{ tool.route }}">
-        <div class="tool-icon">{{ tool.icon }}</div>
-        <div class="tool-name">{{ tool.name }}</div>
-        <div class="tool-desc">{{ tool.description }}</div>
+      <a class="card" data-slug="{{ tool.slug }}" href="{{ tool.route }}">
+        <div class="glow" aria-hidden="true"></div>
+        <div class="ring" aria-hidden="true"></div>
+        <div class="card-top">
+          <div class="icon-wrap" aria-hidden="true">{{ tool.icon }}</div>
+          <span class="chip">
+            {% if tool.slug == 'pdf2word' %}PDF → Word
+            {% elif tool.slug == 'word2pdf' %}Word → PDF
+            {% else %}工具
+            {% endif %}
+          </span>
+        </div>
+        <div class="card-body">
+          <h3>{{ tool.name }}</h3>
+          <p>{{ tool.description }}</p>
+        </div>
+        <div class="features">
+          {% if tool.slug == 'pdf2word' %}
+          <span class="feat">合并单元格</span>
+          <span class="feat">图片嵌入</span>
+          <span class="feat">页码范围</span>
+          <span class="feat">批量 ZIP</span>
+          {% elif tool.slug == 'word2pdf' %}
+          <span class="feat">LibreOffice</span>
+          <span class="feat">.docx / .doc</span>
+          <span class="feat">批量 ZIP</span>
+          <span class="feat">高保真</span>
+          {% endif %}
+        </div>
+        <div class="card-foot">
+          <span class="cta">
+            开始转换
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M5 12h14M13 6l6 6-6 6"/>
+            </svg>
+          </span>
+          <span class="hint">免费使用</span>
+        </div>
       </a>
       {% endfor %}
     </div>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        <div class="footer-brand">工具箱</div>
+        <div class="footer-note">轻量文档工具 · 共 {{ tools|length }} 个在线服务</div>
+      </div>
+    </footer>
   </div>
 </body>
 </html>

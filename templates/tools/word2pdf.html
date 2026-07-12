@@ -3,110 +3,326 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Word 转 PDF — LibreOffice 高保真转换" />
   <title>Word 转 PDF — 工具箱</title>
   <style>
-    :root { color-scheme: light; }
-    * { box-sizing: border-box; }
-    html, body { height: 100%; }
+    :root {
+      color-scheme: light;
+      --ink: #0b1220;
+      --ink-2: #1e293b;
+      --muted: #64748b;
+      --muted-2: #94a3b8;
+      --surface: rgba(255, 255, 255, 0.82);
+      --line: rgba(15, 23, 42, 0.08);
+      --c: #059669;
+      --c2: #10b981;
+      --c-soft: #ecfdf5;
+      --c-border: #a7f3d0;
+      --shadow: 0 16px 48px rgba(15, 23, 42, 0.1);
+      --shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.04);
+      --radius: 22px;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      margin: 0; font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
-      background: linear-gradient(135deg, #ecfdf5 0%, #f4f6fb 100%);
-      color: #1f2937;
-      display: flex; min-height: 100vh; padding: 24px;
+      font-family: var(--font);
+      color: var(--ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 28px 16px;
+      background: #eef1f8;
     }
+    .bg {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background:
+        radial-gradient(ellipse 80% 55% at 12% 8%, rgba(16, 185, 129, 0.22), transparent 55%),
+        radial-gradient(ellipse 60% 45% at 92% 12%, rgba(52, 211, 153, 0.16), transparent 50%),
+        radial-gradient(ellipse 50% 40% at 50% 100%, rgba(5, 150, 105, 0.1), transparent 55%),
+        linear-gradient(165deg, #ecfdf5 0%, #eef2f7 45%, #f5f7fb 100%);
+    }
+    .bg::before {
+      content: "";
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.45) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.45) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: radial-gradient(ellipse 70% 55% at 50% 35%, black 15%, transparent 75%);
+      opacity: 0.5;
+    }
+
+    .shell {
+      position: relative; z-index: 1;
+      width: min(540px, 100%);
+      animation: enter 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+    .nav {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 16px; gap: 12px;
+    }
+    .back {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 13px; font-weight: 600; color: var(--muted);
+      text-decoration: none; padding: 8px 12px;
+      background: var(--surface); border: 1px solid var(--line);
+      border-radius: 999px; backdrop-filter: blur(10px);
+      transition: color .15s, border-color .15s, background .15s;
+    }
+    .back:hover { color: var(--c); border-color: var(--c-border); background: #fff; }
+    .back svg { width: 15px; height: 15px; }
+    .chip {
+      font-size: 11px; font-weight: 700; color: var(--c);
+      background: var(--c-soft); border: 1px solid var(--c-border);
+      padding: 6px 11px; border-radius: 999px;
+    }
+
     .card {
-      margin: auto;
-      background: #fff; padding: 32px 36px; border-radius: 16px;
-      width: min(520px, 94vw);
-      box-shadow: 0 10px 40px rgba(0,0,0,.08);
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 28px 28px 24px;
+      overflow: hidden;
+      position: relative;
     }
-    .back { display: inline-block; margin-bottom: 16px; color: #059669; text-decoration: none; font-size: 13px; }
-    .back:hover { text-decoration: underline; }
-    h1 { font-size: 20px; margin: 0 0 6px; }
-    p.sub { margin: 0 0 16px; color: #6b7280; font-size: 13px; line-height: 1.5; }
+    .card::before {
+      content: "";
+      position: absolute; left: 0; right: 0; top: 0; height: 3px;
+      background: linear-gradient(90deg, var(--c), var(--c2), #34d399);
+    }
+    .card-head {
+      display: flex; gap: 14px; align-items: flex-start;
+      margin-bottom: 18px;
+    }
+    .icon {
+      width: 52px; height: 52px; border-radius: 16px; flex-shrink: 0;
+      display: grid; place-items: center; font-size: 24px;
+      background: linear-gradient(145deg, var(--c2), var(--c));
+      box-shadow: 0 10px 24px rgba(5, 150, 105, 0.35),
+        inset 0 1px 0 rgba(255,255,255,0.28);
+    }
+    .card-head h1 {
+      font-size: 1.35rem; font-weight: 800; letter-spacing: -0.03em;
+      color: var(--ink); margin-bottom: 6px; line-height: 1.2;
+    }
+    .card-head p {
+      font-size: 13px; line-height: 1.6; color: var(--muted);
+    }
+
+    .features {
+      display: flex; flex-wrap: wrap; gap: 6px;
+      margin: 0 0 16px;
+    }
+    .feat {
+      font-size: 11px; font-weight: 600; color: #475569;
+      background: #f8fafc; border: 1px solid #eef2f7;
+      padding: 4px 9px; border-radius: 8px;
+    }
+
     .engine {
-      margin: 0 0 18px; padding: 10px 12px; border-radius: 10px; font-size: 12px; line-height: 1.5;
+      margin: 0 0 16px; padding: 12px 14px; border-radius: 14px;
+      font-size: 12px; line-height: 1.55; font-weight: 500;
+      display: flex; gap: 10px; align-items: flex-start;
     }
-    .engine.ok { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
-    .engine.bad { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+    .engine .ei {
+      width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
+      display: grid; place-items: center; font-size: 13px;
+    }
+    .engine.ok {
+      background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0;
+    }
+    .engine.ok .ei { background: #d1fae5; }
+    .engine.bad {
+      background: #fef2f2; color: #991b1b; border: 1px solid #fecaca;
+    }
+    .engine.bad .ei { background: #fee2e2; }
+    .engine a { color: inherit; font-weight: 700; }
+    .engine code {
+      font-size: 11px; background: rgba(0,0,0,0.05);
+      padding: 1px 5px; border-radius: 4px;
+    }
+
     .drop {
-      display: block; width: 100%;
-      border: 2px dashed #a7f3d0; border-radius: 12px; padding: 28px 16px;
-      text-align: center; cursor: pointer; transition: .15s; background: #f0fdf4;
+      display: block; width: 100%; cursor: pointer;
+      border: 2px dashed var(--c-border);
+      border-radius: 16px; padding: 32px 18px;
+      text-align: center; background: linear-gradient(180deg, #f7fdf9 0%, #f0fdf4 100%);
+      transition: border-color .15s, background .15s, box-shadow .15s;
     }
-    .drop:hover, .drop.drag { border-color: #10b981; background: #d1fae5; }
-    .drop strong { color: #059669; }
-    .drop.disabled { opacity: .55; cursor: not-allowed; pointer-events: none; }
+    .drop:hover, .drop.drag {
+      border-color: var(--c);
+      background: var(--c-soft);
+      box-shadow: 0 0 0 4px rgba(5, 150, 105, 0.08);
+    }
+    .drop.disabled {
+      opacity: .55; cursor: not-allowed; pointer-events: none;
+    }
+    .drop-icon {
+      width: 48px; height: 48px; margin: 0 auto 12px;
+      border-radius: 14px; display: grid; place-items: center;
+      background: #fff; border: 1px solid var(--c-border);
+      color: var(--c); box-shadow: var(--shadow-sm);
+    }
+    .drop-icon svg { width: 22px; height: 22px; }
+    .drop-title { font-size: 14px; font-weight: 600; color: var(--ink-2); }
+    .drop-title strong { color: var(--c); }
+    .drop-hint { margin-top: 6px; font-size: 12px; color: var(--muted-2); }
     input[type=file] { display: none; }
+
     .file-list {
-      margin: 12px 0 0; padding: 0; list-style: none; max-height: 160px; overflow: auto;
+      margin: 12px 0 0; padding: 0; list-style: none;
+      max-height: 168px; overflow: auto;
     }
     .file-list li {
-      display: flex; align-items: center; gap: 8px;
-      font-size: 12px; color: #374151; padding: 6px 8px;
-      background: #f9fafb; border-radius: 8px; margin-bottom: 6px;
+      display: flex; align-items: center; gap: 10px;
+      font-size: 12px; color: var(--ink-2);
+      padding: 10px 12px; margin-bottom: 6px;
+      background: #f8fafc; border: 1px solid #eef2f7; border-radius: 12px;
     }
-    .file-list .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .file-list .fsize { color: #9ca3af; flex-shrink: 0; }
+    .file-list .fi {
+      width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0;
+      display: grid; place-items: center; font-size: 14px;
+      background: var(--c-soft); color: var(--c);
+    }
+    .file-list .fname {
+      flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font-weight: 600;
+    }
+    .file-list .fsize { color: var(--muted-2); flex-shrink: 0; font-size: 11px; }
     .file-list button {
-      width: auto; margin: 0; padding: 2px 8px; font-size: 12px;
-      background: transparent; color: #9ca3af; border-radius: 6px; border: 0; cursor: pointer;
+      border: 0; background: transparent; color: var(--muted-2);
+      font-size: 12px; font-weight: 600; cursor: pointer;
+      padding: 4px 8px; border-radius: 8px;
     }
     .file-list button:hover { color: #dc2626; background: #fef2f2; }
+
     #btn {
-      width: 100%; margin-top: 18px; padding: 11px; border: 0; border-radius: 10px;
-      background: #059669; color: #fff; font-size: 15px; cursor: pointer;
+      width: 100%; margin-top: 18px; padding: 13px 16px; border: 0;
+      border-radius: 14px; font-size: 15px; font-weight: 700; cursor: pointer;
+      color: #fff;
+      background: linear-gradient(135deg, var(--c) 0%, var(--c2) 100%);
+      box-shadow: 0 8px 20px rgba(5, 150, 105, 0.32);
+      transition: transform .15s, box-shadow .15s, opacity .15s;
     }
-    #btn:disabled { background: #c7c9d9; cursor: not-allowed; }
+    #btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 12px 28px rgba(5, 150, 105, 0.4);
+    }
+    #btn:disabled {
+      background: #e2e8f0; color: #94a3b8; box-shadow: none;
+      cursor: not-allowed; transform: none;
+    }
+
     .progress {
-      display: none; margin-top: 14px; height: 6px; background: #e5e7eb;
-      border-radius: 999px; overflow: hidden;
+      display: none; margin-top: 14px; height: 7px;
+      background: #eef2f7; border-radius: 999px; overflow: hidden;
     }
     .progress.show { display: block; }
     .progress > i {
       display: block; height: 100%; width: 0%;
-      background: linear-gradient(90deg, #10b981, #34d399);
-      transition: width .15s ease;
+      background: linear-gradient(90deg, var(--c), var(--c2), #6ee7b7);
+      border-radius: 999px; transition: width .15s ease;
     }
-    #status { margin-top: 12px; font-size: 13px; min-height: 18px; line-height: 1.5; }
-    .err { color: #dc2626; }
-    .ok { color: #16a34a; }
-    .info { color: #4b5563; }
-    .warn { color: #d97706; }
+
+    #status {
+      margin-top: 14px; font-size: 13px; min-height: 20px; line-height: 1.55;
+      font-weight: 500;
+    }
+    #status:not(:empty) {
+      padding: 10px 12px; border-radius: 12px; background: #f8fafc;
+      border: 1px solid #eef2f7;
+    }
+    #status.err { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
+    #status.ok { color: #15803d; background: #f0fdf4; border-color: #bbf7d0; }
+    #status.info { color: #334155; }
+    #status.warn { color: #b45309; background: #fffbeb; border-color: #fde68a; }
+
+    @keyframes enter {
+      from { opacity: 0; transform: translateY(14px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @media (max-width: 480px) {
+      .card { padding: 22px 18px 18px; }
+      .card-head { gap: 12px; }
+      .icon { width: 46px; height: 46px; border-radius: 14px; font-size: 22px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .shell { animation: none; }
+      #btn { transition: none; }
+    }
   </style>
 </head>
 <body>
-  <div class="card">
-    <a class="back" href="/">&larr; 返回工具箱</a>
-    <h1>Word → PDF 转换器</h1>
-    <p class="sub">将 .docx / .doc 转为 PDF。优先使用 LibreOffice（适合服务器 / Docker），Windows 本机也可回退到 Microsoft Word。</p>
+  <div class="bg" aria-hidden="true"></div>
+  <div class="shell">
+    <div class="nav">
+      <a class="back" href="/">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M19 12H5M11 18l-6-6 6-6"/>
+        </svg>
+        返回工具箱
+      </a>
+      <span class="chip">Word → PDF</span>
+    </div>
 
-    {% if engine and engine.ready %}
-    <div class="engine ok">
-      引擎就绪：{{ engine.preferred }}
-      {% if engine.engines|length > 1 %}
-        （可用：{{ engine.engines | join(', ') }}）
+    <div class="card">
+      <div class="card-head">
+        <div class="icon" aria-hidden="true">📝</div>
+        <div>
+          <h1>Word → PDF 转换器</h1>
+          <p>将 .docx / .doc 转为 PDF。优先 LibreOffice（服务器 / Docker），Windows 可回退 Microsoft Word。</p>
+        </div>
+      </div>
+
+      <div class="features">
+        <span class="feat">LibreOffice</span>
+        <span class="feat">.docx / .doc</span>
+        <span class="feat">批量 ZIP</span>
+        <span class="feat">高保真</span>
+      </div>
+
+      {% if engine and engine.ready %}
+      <div class="engine ok">
+        <span class="ei" aria-hidden="true">✓</span>
+        <div>
+          引擎就绪：<strong>{{ engine.preferred }}</strong>
+          {% if engine.engines|length > 1 %}
+            （可用：{{ engine.engines | join(', ') }}）
+          {% endif %}
+        </div>
+      </div>
+      {% else %}
+      <div class="engine bad">
+        <span class="ei" aria-hidden="true">!</span>
+        <div>
+          未检测到转换引擎。请安装
+          <a href="https://www.libreoffice.org/" target="_blank" rel="noopener">LibreOffice</a>
+          （推荐，可设置 <code>LIBREOFFICE_PATH</code>），
+          或在 Windows 安装 Microsoft Word。Docker 镜像已内置 LibreOffice。
+        </div>
+      </div>
       {% endif %}
-    </div>
-    {% else %}
-    <div class="engine bad">
-      未检测到转换引擎。请安装
-      <a href="https://www.libreoffice.org/" target="_blank" rel="noopener">LibreOffice</a>
-      （推荐，可设置环境变量 <code>LIBREOFFICE_PATH</code>），
-      或在 Windows 上安装 Microsoft Word。Docker 镜像已内置 LibreOffice。
-    </div>
-    {% endif %}
 
-    <label class="drop{% if not engine or not engine.ready %} disabled{% endif %}" id="drop">
-      <input type="file" id="file" accept=".docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword" multiple {% if not engine or not engine.ready %}disabled{% endif %} />
-      <div>点击或拖拽 <strong>Word 文件</strong> 到此处</div>
-      <div style="margin-top:6px;color:#9ca3af;font-size:12px;">支持 .docx / .doc · 最多 20 个 · 每个 ≤ 50 MB</div>
-    </label>
-    <ul class="file-list" id="list"></ul>
+      <label class="drop{% if not engine or not engine.ready %} disabled{% endif %}" id="drop">
+        <input type="file" id="file" accept=".docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword" multiple {% if not engine or not engine.ready %}disabled{% endif %} />
+        <div class="drop-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 16V4M7 9l5-5 5 5"/>
+            <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+          </svg>
+        </div>
+        <div class="drop-title">点击或拖拽 <strong>Word 文件</strong> 到此处</div>
+        <div class="drop-hint">支持 .docx / .doc · 最多 20 个 · 每个 ≤ 50 MB</div>
+      </label>
+      <ul class="file-list" id="list"></ul>
 
-    <button id="btn" disabled>开始转换</button>
-    <div class="progress" id="progress"><i id="bar"></i></div>
-    <div id="status"></div>
+      <button id="btn" disabled>开始转换</button>
+      <div class="progress" id="progress"><i id="bar"></i></div>
+      <div id="status"></div>
+    </div>
   </div>
 
   <script>
@@ -168,6 +384,10 @@
       list.innerHTML = '';
       selected.forEach((f, i) => {
         const li = document.createElement('li');
+        const icon = document.createElement('span');
+        icon.className = 'fi';
+        icon.textContent = '📝';
+        icon.setAttribute('aria-hidden', 'true');
         const name = document.createElement('span');
         name.className = 'fname';
         name.title = f.name;
@@ -186,7 +406,7 @@
           status.textContent = '';
           status.className = '';
         });
-        li.append(name, size, rm);
+        li.append(icon, name, size, rm);
         list.appendChild(li);
       });
       btn.disabled = !ENGINE_READY || selected.length === 0;
