@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 
 from .base64_tool import router as base64_router
 from .pdf2word import router as pdf2word_router
+from .rmb_tool import router as rmb_router
 from .word2pdf import router as word2pdf_router
 
 # ---------------------------------------------------------------------------
@@ -21,6 +22,16 @@ TOOL_CATEGORIES: List[Dict[str, Any]] = [
         "accent": "indigo",
         "route": "/c/document",
         "lead": "表格高保真、批量转换、可选 OCR，适合日常办公文档互转。",
+    },
+    {
+        "id": "office",
+        "name": "办公工具",
+        "name_en": "Office",
+        "description": "金额大写、日常办公小工具",
+        "icon": "💼",
+        "accent": "emerald",
+        "route": "/c/office",
+        "lead": "财务与办公场景常用的小工具。",
     },
     {
         "id": "coding",
@@ -74,6 +85,18 @@ TOOL_REGISTRY: List[Dict[str, Any]] = [
         "cta": "打开工具",
         "accent": "amber",
     },
+    {
+        "name": "人民币大写",
+        "slug": "rmb",
+        "category": "office",
+        "description": "阿拉伯数字金额转财务规范中文大写，支持角分、千分位与货币符号。",
+        "icon": "¥",
+        "route": "/tools/rmb",
+        "badge": "数字 → 大写",
+        "features": ["角分规范", "千分位清洗", "一键复制", "即时转换"],
+        "cta": "打开工具",
+        "accent": "emerald",
+    },
 ]
 
 # Routers to mount on the FastAPI app (order does not matter).
@@ -81,6 +104,7 @@ TOOL_ROUTERS = (
     pdf2word_router,
     word2pdf_router,
     base64_router,
+    rmb_router,
 )
 
 
@@ -157,4 +181,5 @@ __all__ = [
     "pdf2word_router",
     "word2pdf_router",
     "base64_router",
+    "rmb_router",
 ]

@@ -56,7 +56,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="工具集", version="0.7.0", lifespan=lifespan)
+app = FastAPI(title="工具集", version="0.8.0", lifespan=lifespan)
 
 # Static assets (shared CSS, etc.)
 static_dir = os.path.join(BASE_DIR, "static")
@@ -105,6 +105,11 @@ async def documents_alias():
 @app.get("/coding", response_class=HTMLResponse)
 async def coding_alias():
     return RedirectResponse(url="/c/coding", status_code=307)
+
+
+@app.get("/office", response_class=HTMLResponse)
+async def office_alias():
+    return RedirectResponse(url="/c/office", status_code=307)
 
 
 @app.get("/api/tools")
