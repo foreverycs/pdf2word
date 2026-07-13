@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="JSON 格式化与压缩 — 美化、最小化、键排序" />
+  <title>JSON 格式化 — 工具集</title>
+  <link rel="stylesheet" href="/static/css/tokens.css" />
+  <link rel="stylesheet" href="/static/css/layout.css" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font);
+      color: var(--ink);
+      min-height: 100vh;
+      background: var(--bg);
+    }
+    .bg {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background:
+        radial-gradient(ellipse 70% 50% at 15% 8%, rgba(245, 158, 11, 0.2), transparent 55%),
+        radial-gradient(ellipse 55% 40% at 90% 10%, rgba(99, 102, 241, 0.14), transparent 50%),
+        linear-gradient(165deg, #fffbeb 0%, #eef2f7 45%, #f5f7fb 100%);
+    }
+    .shell { position: relative; z-index: 1; width: 100%; }
+    .nav {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 14px; gap: 12px;
+    }
+    .back {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 13px; font-weight: 600; color: var(--muted);
+      text-decoration: none; padding: 8px 12px;
+      background: var(--surface); border: 1px solid var(--line);
+      border-radius: 999px; backdrop-filter: blur(10px);
+      transition: color .15s, border-color .15s, background .15s;
+    }
+    .back:hover { color: #d97706; border-color: #fde68a; background: #fff; }
+    .back svg { width: 15px; height: 15px; }
+    .chip {
+      font-size: 11px; font-weight: 700; color: #b45309;
+      background: #fffbeb; border: 1px solid #fde68a;
+      padding: 6px 11px; border-radius: 999px;
+    }
+
+    .card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 24px 24px 20px;
+      overflow: hidden;
+      position: relative;
+    }
+    .card::before {
+      content: "";
+      position: absolute; left: 0; right: 0; top: 0; height: 3px;
+      background: linear-gradient(90deg, #d97706, #f59e0b, #4f46e5);
+    }
+    .card-head {
+      display: flex; gap: 14px; align-items: flex-start;
+      margin-bottom: 18px;
+    }
+    .icon {
+      width: 48px; height: 48px; border-radius: 14px;
+      display: grid; place-items: center; font-size: 20px; flex-shrink: 0;
+      background: linear-gradient(145deg, #fbbf24, #d97706);
+      box-shadow: 0 10px 22px rgba(217, 119, 6, 0.3);
+      font-weight: 800; color: #fff;
+    }
+    .card-head h1 {
+      font-size: 1.25rem; font-weight: 750; letter-spacing: -0.02em;
+      margin-bottom: 4px;
+    }
+    .card-head p { font-size: 13px; color: var(--muted); line-height: 1.55; }
+
+    .mode-tabs {
+      display: flex; gap: 6px; padding: 4px;
+      background: #f8fafc; border: 1px solid #eef2f7;
+      border-radius: 12px; margin-bottom: 16px; width: fit-content;
+    }
+    .mode-tab {
+      font: inherit; font-size: 13px; font-weight: 650;
+      padding: 8px 16px; border: none; border-radius: 9px;
+      background: transparent; color: var(--muted); cursor: pointer;
+      transition: background .15s, color .15s, box-shadow .15s;
+    }
+    .mode-tab.active {
+      background: #fff; color: #b45309;
+      box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+    }
+
+    .opts {
+      display: flex; flex-wrap: wrap; gap: 10px 14px;
+      margin-bottom: 14px; align-items: flex-end;
+    }
+    .field {
+      display: flex; flex-direction: column; gap: 5px;
+      font-size: 12px; font-weight: 650; color: #475569;
+    }
+    .field select {
+      font: inherit; font-size: 13px; font-weight: 500;
+      padding: 8px 10px; border-radius: 10px;
+      border: 1px solid #e2e8f0; background: #fff; color: var(--ink);
+      min-width: 120px;
+    }
+    .field select:focus, textarea:focus {
+      outline: 2px solid rgba(217, 119, 6, 0.35);
+      outline-offset: 1px;
+    }
+    .check {
+      display: inline-flex; align-items: center; gap: 7px;
+      font-size: 12.5px; font-weight: 600; color: #475569;
+      cursor: pointer; user-select: none; padding-bottom: 2px;
+    }
+
+    .panes {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    @media (max-width: 760px) {
+      .panes { grid-template-columns: 1fr; }
+    }
+    .pane {
+      display: flex; flex-direction: column; gap: 8px; min-width: 0;
+    }
+    .pane-label {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 12px; font-weight: 700; color: #475569;
+    }
+    .pane-actions { display: flex; gap: 6px; }
+    .mini {
+      font: inherit; font-size: 11px; font-weight: 650;
+      padding: 4px 9px; border-radius: 8px; cursor: pointer;
+      border: 1px solid #e2e8f0; background: #f8fafc; color: #475569;
+      transition: background .12s, border-color .12s, color .12s;
+    }
+    .mini:hover { background: #fff; border-color: #fcd34d; color: #b45309; }
+    textarea {
+      width: 100%; min-height: 280px; resize: vertical;
+      font-family: var(--mono); font-size: 12.5px; line-height: 1.55;
+      padding: 12px 14px; border-radius: 14px;
+      border: 1px solid #e2e8f0; background: #fafbfc; color: var(--ink);
+    }
+    textarea[readonly] { background: #f8fafc; color: #0f172a; }
+
+    .actions {
+      display: flex; flex-wrap: wrap; gap: 10px;
+      margin-top: 16px; align-items: center;
+    }
+    .btn {
+      font: inherit; font-size: 14px; font-weight: 700;
+      padding: 11px 20px; border-radius: 12px; border: none;
+      cursor: pointer; color: #fff;
+      background: linear-gradient(135deg, #d97706, #f59e0b);
+      box-shadow: 0 8px 20px rgba(217, 119, 6, 0.3);
+      transition: transform .15s, box-shadow .15s, opacity .15s;
+    }
+    .btn:hover { transform: translateY(-1px); box-shadow: 0 10px 24px rgba(217, 119, 6, 0.38); }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+    .btn-ghost {
+      color: #475569; background: #fff;
+      border: 1px solid #e2e8f0; box-shadow: none;
+    }
+    .btn-ghost:hover { border-color: #fcd34d; color: #b45309; box-shadow: none; }
+
+    .meta {
+      margin-top: 12px; font-size: 12px; color: var(--muted);
+      display: flex; flex-wrap: wrap; gap: 8px 14px;
+    }
+    .meta strong { color: var(--ink-2); font-weight: 700; }
+    .status {
+      margin-top: 12px; font-size: 13px; line-height: 1.5;
+      padding: 10px 12px; border-radius: 12px;
+      display: none;
+    }
+    .status.show { display: block; }
+    .status.ok { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+    .status.err { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+    .status.info { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+
+    .tips {
+      margin-top: 14px; font-size: 12px; color: var(--muted-2); line-height: 1.55;
+    }
+  </style>
+</head>
+<body>
+  <div class="bg" aria-hidden="true"></div>
+  <div class="tool-shell">
+  <div class="shell">
+    <div class="nav">
+      <a class="back" href="/c/coding">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M19 12H5M11 18l-6-6 6-6"/>
+        </svg>
+        编码工具
+      </a>
+      <span class="chip">编码工具 · JSON</span>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="icon" aria-hidden="true">{ }</div>
+        <div>
+          <h1>JSON 格式化</h1>
+          <p>美化缩进、一键压缩、对象键排序，支持中文不转义；解析失败时提示行列位置。</p>
+        </div>
+      </div>
+
+      <div class="mode-tabs" role="tablist">
+        <button type="button" class="mode-tab active" data-mode="pretty" role="tab">格式化 Pretty</button>
+        <button type="button" class="mode-tab" data-mode="minify" role="tab">压缩 Minify</button>
+      </div>
+
+      <div class="opts">
+        <label class="field" id="indentField">缩进
+          <select id="indent">
+            <option value="2" selected>2 空格</option>
+            <option value="4">4 空格</option>
+            <option value="1">1 空格</option>
+          </select>
+        </label>
+        <label class="check">
+          <input type="checkbox" id="sortKeys" />
+          按键名排序
+        </label>
+        <label class="check">
+          <input type="checkbox" id="ensureAscii" />
+          ASCII 转义（\uXXXX）
+        </label>
+      </div>
+
+      <div class="panes">
+        <div class="pane">
+          <div class="pane-label">
+            <span>输入 JSON</span>
+            <div class="pane-actions">
+              <button type="button" class="mini" id="btnSample">示例</button>
+              <button type="button" class="mini" id="btnClearIn">清空</button>
+            </div>
+          </div>
+          <textarea id="input" placeholder='粘贴 JSON，例如 {"name":"工具集","ok":true}' spellcheck="false"></textarea>
+        </div>
+        <div class="pane">
+          <div class="pane-label">
+            <span>输出</span>
+            <div class="pane-actions">
+              <button type="button" class="mini" id="btnCopy">复制</button>
+              <button type="button" class="mini" id="btnClearOut">清空</button>
+            </div>
+          </div>
+          <textarea id="output" readonly placeholder="结果将显示在这里…" spellcheck="false"></textarea>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button type="button" class="btn" id="btnRun">格式化</button>
+        <button type="button" class="btn btn-ghost" id="btnValidate">仅校验</button>
+        <button type="button" class="btn btn-ghost" id="btnSwap">结果填回输入</button>
+      </div>
+
+      <div class="meta" id="meta"></div>
+      <div class="status" id="status"></div>
+      <p class="tips">
+        提示：默认保留中文；需要兼容旧系统时可勾选 ASCII 转义。
+        快捷键 Ctrl/Cmd + Enter 执行当前模式。
+      </p>
+    </div>
+  </div>
+  </div>
+
+  <script>
+    const modeTabs = document.querySelectorAll('.mode-tab');
+    const input = document.getElementById('input');
+    const output = document.getElementById('output');
+    const indent = document.getElementById('indent');
+    const indentField = document.getElementById('indentField');
+    const sortKeys = document.getElementById('sortKeys');
+    const ensureAscii = document.getElementById('ensureAscii');
+    const btnRun = document.getElementById('btnRun');
+    const btnValidate = document.getElementById('btnValidate');
+    const btnSwap = document.getElementById('btnSwap');
+    const btnCopy = document.getElementById('btnCopy');
+    const btnSample = document.getElementById('btnSample');
+    const btnClearIn = document.getElementById('btnClearIn');
+    const btnClearOut = document.getElementById('btnClearOut');
+    const meta = document.getElementById('meta');
+    const status = document.getElementById('status');
+
+    let mode = 'pretty';
+
+    function setStatus(kind, text) {
+      status.className = 'status show ' + kind;
+      status.textContent = text;
+    }
+    function clearStatus() {
+      status.className = 'status';
+      status.textContent = '';
+    }
+
+    function applyMode(next) {
+      mode = next;
+      modeTabs.forEach((t) => {
+        t.classList.toggle('active', t.getAttribute('data-mode') === mode);
+      });
+      if (mode === 'pretty') {
+        btnRun.textContent = '格式化';
+        indentField.style.display = '';
+      } else {
+        btnRun.textContent = '压缩';
+        indentField.style.display = 'none';
+      }
+      clearStatus();
+    }
+
+    modeTabs.forEach((tab) => {
+      tab.addEventListener('click', () => applyMode(tab.getAttribute('data-mode')));
+    });
+    applyMode('pretty');
+
+    btnClearIn.addEventListener('click', () => { input.value = ''; });
+    btnClearOut.addEventListener('click', () => { output.value = ''; meta.innerHTML = ''; });
+
+    btnSample.addEventListener('click', () => {
+      input.value = JSON.stringify({
+        name: '工具集',
+        version: 1,
+        features: ['json', 'base64'],
+        nested: { ok: true, count: 2 },
+        empty: null
+      });
+    });
+
+    btnSwap.addEventListener('click', () => {
+      if (!output.value) return;
+      input.value = output.value;
+    });
+
+    btnCopy.addEventListener('click', async () => {
+      const text = output.value;
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        setStatus('ok', '已复制到剪贴板');
+      } catch (e) {
+        output.select();
+        document.execCommand('copy');
+        setStatus('ok', '已复制');
+      }
+    });
+
+    function showMeta(obj) {
+      const parts = [];
+      if (obj.type) parts.push(`类型 <strong>${obj.type}</strong>`);
+      if (obj.mode) parts.push(`模式 <strong>${obj.mode}</strong>`);
+      if (obj.indent != null && obj.mode === 'pretty') parts.push(`缩进 <strong>${obj.indent}</strong>`);
+      if (obj.input_chars != null) parts.push(`输入 <strong>${obj.input_chars}</strong> 字符`);
+      if (obj.output_chars != null) parts.push(`输出 <strong>${obj.output_chars}</strong> 字符`);
+      if (obj.sort_keys) parts.push(`键排序 <strong>开</strong>`);
+      if (obj.ensure_ascii) parts.push(`ASCII <strong>开</strong>`);
+      meta.innerHTML = parts.join(' · ');
+    }
+
+    function detailMessage(data) {
+      const detail = data.detail;
+      if (typeof detail === 'string') return detail;
+      if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
+        let msg = detail.message || detail.msg || '请求失败';
+        if (detail.line != null) {
+          msg += `（第 ${detail.line} 行，第 ${detail.column} 列）`;
+        }
+        return msg;
+      }
+      if (Array.isArray(detail)) {
+        return detail.map((d) => d.msg || d.message || d).join('; ');
+      }
+      return data.message || `HTTP 错误`;
+    }
+
+    async function runFormat() {
+      clearStatus();
+      btnRun.disabled = true;
+      try {
+        const fd = new FormData();
+        fd.append('text', input.value);
+        fd.append('mode', mode);
+        fd.append('indent', indent.value);
+        fd.append('sort_keys', sortKeys.checked ? 'true' : 'false');
+        fd.append('ensure_ascii', ensureAscii.checked ? 'true' : 'false');
+        const res = await fetch('/tools/json/format', { method: 'POST', body: fd });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(detailMessage(data));
+        output.value = data.result || '';
+        setStatus('ok', mode === 'pretty' ? '格式化完成' : '压缩完成');
+        showMeta(data);
+      } catch (err) {
+        setStatus('err', err.message || String(err));
+      } finally {
+        btnRun.disabled = false;
+      }
+    }
+
+    async function runValidate() {
+      clearStatus();
+      try {
+        const fd = new FormData();
+        fd.append('text', input.value);
+        const res = await fetch('/tools/json/validate', { method: 'POST', body: fd });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(detailMessage(data));
+        if (data.valid) {
+          setStatus('ok', `JSON 有效（类型：${data.type || 'value'}）`);
+          meta.innerHTML = data.input_chars != null
+            ? `输入 <strong>${data.input_chars}</strong> 字符`
+            : '';
+        } else {
+          let msg = data.error || 'JSON 无效';
+          if (data.line != null) msg += `（第 ${data.line} 行，第 ${data.column} 列）`;
+          setStatus('err', msg);
+        }
+      } catch (err) {
+        setStatus('err', err.message || String(err));
+      }
+    }
+
+    btnRun.addEventListener('click', runFormat);
+    btnValidate.addEventListener('click', runValidate);
+
+    input.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        runFormat();
+      }
+    });
+  </script>
+</body>
+</html>

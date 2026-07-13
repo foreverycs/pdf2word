@@ -56,7 +56,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="工具集", version="0.8.0", lifespan=lifespan)
+app = FastAPI(title="工具集", version="0.9.0", lifespan=lifespan)
 
 # Static assets (shared CSS, etc.)
 static_dir = os.path.join(BASE_DIR, "static")

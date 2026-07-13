@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from .base64_tool import router as base64_router
+from .json_tool import router as json_router
 from .pdf2word import router as pdf2word_router
 from .rmb_tool import router as rmb_router
 from .word2pdf import router as word2pdf_router
@@ -86,6 +87,18 @@ TOOL_REGISTRY: List[Dict[str, Any]] = [
         "accent": "amber",
     },
     {
+        "name": "JSON 格式化",
+        "slug": "json",
+        "category": "coding",
+        "description": "JSON 美化缩进、压缩最小化、键排序与语法校验，默认保留中文。",
+        "icon": "{ }",
+        "route": "/tools/json",
+        "badge": "Pretty · Minify",
+        "features": ["美化 / 压缩", "键排序", "中文不转义", "错误定位"],
+        "cta": "打开工具",
+        "accent": "amber",
+    },
+    {
         "name": "人民币大写",
         "slug": "rmb",
         "category": "office",
@@ -104,6 +117,7 @@ TOOL_ROUTERS = (
     pdf2word_router,
     word2pdf_router,
     base64_router,
+    json_router,
     rmb_router,
 )
 
@@ -181,5 +195,6 @@ __all__ = [
     "pdf2word_router",
     "word2pdf_router",
     "base64_router",
+    "json_router",
     "rmb_router",
 ]
