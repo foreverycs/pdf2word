@@ -163,8 +163,8 @@ docker compose down
 |------|------|------|
 | `GET` | `/health` | 健康检查（含工具分类） |
 | `GET` | `/api/tools` | 工具目录 JSON（分类 + 列表） |
-| `GET` | `/api/uploads` | 最近上传记录 JSON |
-| `GET` | `/api/uploads/{id}/download` | 下载归档的输入文件 |
+| `GET` | `/api/uploads` | 最近上传记录 JSON（需管理员登录） |
+| `GET` | `/api/uploads/{id}/download` | 下载归档的输入文件（需管理员登录） |
 | `GET` | `/tools/pdf2word` | PDF→Word 页面 |
 | `GET` | `/tools/pdf2word/ocr-status` | OCR（Tesseract）状态 |
 | `POST` | `/tools/pdf2word/convert` | 单 PDF → `.docx` |

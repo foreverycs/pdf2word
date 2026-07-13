@@ -93,26 +93,53 @@ def test_resolve_blocks_traversal(hist_dir):
     assert h.resolve_stored("..\\secrets") is None
 
 
-def test_api_uploads_list(hist_dir, tmp_path):
+def test_api_uploads_requires_admin(hist_dir, tmp_path, monkeypatch):
     h = hist_dir
     src = _touch(tmp_path / "x.pdf", b"data")
-    h.archive_conversion(
+    rec = h.archive_conversion(
         tool="pdf2word",
         original_name="x.pdf",
         input_path=str(src),
     )
+    assert rec is not None
+
+    monkeypatch.setenv("ADMIN_PASSWORD", "test-pass")
+    monkeypatch.setenv("ADMIN_SECRET", "test-secret")
 
     from fastapi.testclient import TestClient
     import app as app_mod
+    import admin.auth as auth
+    import admin.routes as routes
     import importlib
 
+    importlib.reload(auth)
+    importlib.reload(routes)
     importlib.reload(app_mod)
     client = TestClient(app_mod.app)
+
+    # Unauthenticated: list and download must not leak history/files
+    r = client.get("/api/uploads")
+    assert r.status_code == 401
+    dl = client.get(f"/api/uploads/{rec['id']}/download")
+    assert dl.status_code == 401
+
+    # Authenticated admin may list and download
+    login = client.post(
+        "/admin/login",
+        data={"password": "test-pass", "next": "/admin"},
+        follow_redirects=False,
+    )
+    assert login.status_code in (303, 307, 302)
+
     r = client.get("/api/uploads")
     assert r.status_code == 200
     body = r.json()
     assert body["retention_days"] == 5
     assert any(i["original_name"] == "x.pdf" for i in body["items"])
+
+    dl = client.get(f"/api/uploads/{rec['id']}/download")
+    assert dl.status_code == 200
+    assert dl.content == b"data"
 
     home = client.get("/")
     assert home.status_code == 200

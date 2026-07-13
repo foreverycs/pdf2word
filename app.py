@@ -17,6 +17,7 @@ from storage import (
     resolve_stored,
 )
 from admin import admin_router
+from admin.auth import is_admin
 from tools import (
     TOOL_REGISTRY,
     TOOL_ROUTERS,
@@ -159,8 +160,10 @@ async def health():
 
 
 @app.get("/api/uploads")
-async def api_uploads(limit: int = Query(50, ge=1, le=200)):
-    """JSON list of recent uploads (last ``RETENTION_DAYS`` days)."""
+async def api_uploads(request: Request, limit: int = Query(50, ge=1, le=200)):
+    """JSON list of recent uploads (admin only; last ``RETENTION_DAYS`` days)."""
+    if not is_admin(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
     return JSONResponse(
         {
             "retention_days": RETENTION_DAYS,
@@ -170,8 +173,10 @@ async def api_uploads(limit: int = Query(50, ge=1, le=200)):
 
 
 @app.get("/api/uploads/{record_id}/download")
-async def download_upload(record_id: str):
-    """Download the archived input file for a history record."""
+async def download_upload(request: Request, record_id: str):
+    """Download the archived input file for a history record (admin only)."""
+    if not is_admin(request):
+        raise HTTPException(status_code=401, detail="Unauthorized")
     items = list_records(limit=200)
     rec = next((r for r in items if r.get("id") == record_id), None)
     if not rec:
