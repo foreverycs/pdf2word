@@ -228,6 +228,10 @@ def test_route_accessible(merge_client):
     # multi-page pairing mode removed
     assert "单文件配对" not in resp.text
     assert "双文件合并" not in resp.text
+    # in-page preview + print (no auto-download flow)
+    assert "previewFrame" in resp.text
+    assert "打印" in resp.text
+    assert "btnPrint" in resp.text
 
 
 def test_office_category_lists_invoice_merge(merge_client):

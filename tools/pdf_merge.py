@@ -312,12 +312,15 @@ async def convert(
         },
     )
     background_tasks.add_task(shutil.rmtree, tmp_dir, ignore_errors=True)
+    # inline so the browser can embed / print instead of forcing a download
     return FileResponse(
         out_path,
         media_type=_PDF_MEDIA,
         filename=out_name,
+        content_disposition_type="inline",
         headers={
             "X-Input-Pages": str(stats.get("input_pages", 0)),
             "X-Output-Pages": str(stats.get("output_pages", 0)),
+            "Cache-Control": "no-store",
         },
     )
