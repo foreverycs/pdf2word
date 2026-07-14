@@ -93,6 +93,7 @@
     .opts {
       display: flex; flex-wrap: wrap; gap: 10px 14px;
       margin-bottom: 14px; align-items: flex-end;
+      min-height: 54px;
     }
     .field {
       display: flex; flex-direction: column; gap: 5px;
@@ -108,6 +109,14 @@
       outline: 2px solid rgba(217, 119, 6, 0.35);
       outline-offset: 1px;
     }
+    /* Pin the checkbox group to the right and hide the indent control with
+       display:none in minify mode. The fixed .opts height keeps the row and
+       editor panes from jumping when switching modes. */
+    .opts-checks {
+      display: flex; flex-wrap: wrap; gap: 10px 14px;
+      margin-left: auto; align-items: flex-end;
+    }
+    .field.is-inactive { display: none; }
     .check {
       display: inline-flex; align-items: center; gap: 7px;
       font-size: 12.5px; font-weight: 600; color: #475569;
@@ -138,7 +147,7 @@
     }
     .mini:hover { background: #fff; border-color: #fcd34d; color: #b45309; }
     textarea {
-      width: 100%; min-height: 280px; resize: vertical;
+      width: 100%; min-height: 220px; resize: vertical;
       font-family: var(--mono); font-size: 12.5px; line-height: 1.55;
       padding: 12px 14px; border-radius: 14px;
       border: 1px solid #e2e8f0; background: #fafbfc; color: var(--ink);
@@ -149,6 +158,7 @@
       display: flex; flex-wrap: wrap; gap: 10px;
       margin-top: 16px; align-items: center;
     }
+    #btnRun { min-width: 74px; }
     .btn {
       font: inherit; font-size: 14px; font-weight: 700;
       padding: 11px 20px; border-radius: 12px; border: none;
@@ -221,14 +231,16 @@
             <option value="1">1 空格</option>
           </select>
         </label>
-        <label class="check">
-          <input type="checkbox" id="sortKeys" />
-          按键名排序
-        </label>
-        <label class="check">
-          <input type="checkbox" id="ensureAscii" />
-          ASCII 转义（\uXXXX）
-        </label>
+        <div class="opts-checks">
+          <label class="check">
+            <input type="checkbox" id="sortKeys" />
+            按键名排序
+          </label>
+          <label class="check">
+            <input type="checkbox" id="ensureAscii" />
+            ASCII 转义（\uXXXX）
+          </label>
+        </div>
       </div>
 
       <div class="panes">
@@ -306,10 +318,12 @@
       });
       if (mode === 'pretty') {
         btnRun.textContent = '格式化';
-        indentField.style.display = '';
+        indentField.classList.remove('is-inactive');
+        indentField.setAttribute('aria-hidden', 'false');
       } else {
         btnRun.textContent = '压缩';
-        indentField.style.display = 'none';
+        indentField.classList.add('is-inactive');
+        indentField.setAttribute('aria-hidden', 'true');
       }
       clearStatus();
     }

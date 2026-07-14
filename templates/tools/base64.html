@@ -170,7 +170,16 @@
 
     .file-row {
       display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+      min-height: 28px;
       margin-bottom: 12px;
+      transition: opacity .12s ease;
+    }
+    /* Keep the file row's footprint in decode mode so the card and text panes
+       do not jump vertically when switching between encode and decode. */
+    .file-row.is-inactive {
+      visibility: hidden;
+      opacity: 0;
+      pointer-events: none;
     }
     .file-row input[type="file"] { font-size: 12.5px; max-width: 100%; }
     .meta {
@@ -342,7 +351,8 @@
         outputLabel.textContent = 'Base64';
         input.placeholder = '在此输入要编码的文本…';
         btnRun.textContent = '编码';
-        fileRow.style.display = '';
+        fileRow.classList.remove('is-inactive');
+        fileRow.setAttribute('aria-hidden', 'false');
         wrapField.style.display = '';
         strictWrap.style.display = 'none';
       } else {
@@ -350,7 +360,8 @@
         outputLabel.textContent = '明文 / 结果';
         input.placeholder = '粘贴 Base64 字符串…';
         btnRun.textContent = '解码';
-        fileRow.style.display = 'none';
+        fileRow.classList.add('is-inactive');
+        fileRow.setAttribute('aria-hidden', 'true');
         wrapField.style.display = 'none';
         strictWrap.style.display = '';
         fileInput.value = '';
