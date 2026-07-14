@@ -109,7 +109,18 @@ set ADMIN_SECRET=please-use-a-long-random-string-here
 | `MAX_UPLOAD_BYTES` | 单文件上传上限（字节） | `52428800`（50 MB） |
 | `MAX_BATCH_FILES` | 批量最多文件数 | `20` |
 
-项目根目录 `.env` 会在启动时自动加载（不会覆盖系统已有环境变量）。
+项目根目录 `.env` 会在启动时自动加载。
+
+**密码改了不生效？** 常见原因：
+
+1. **改完没重启**进程（uvicorn / Docker / 宝塔 Python 项目必须重启）。
+2. **进程环境变量优先级更高**：Docker `environment:`、宝塔「环境变量」、systemd 里若已有 `ADMIN_PASSWORD=admin123`，默认会**忽略** `.env` 里的同名项。  
+   - 解决：在 `.env` 加 `DOTENV_OVERRIDE=1` 后重启，或改掉 Docker/宝塔里的旧密码。
+3. **Docker 未挂载 `.env`**：容器内读不到宿主机 `.env`。compose 已支持 `env_file: .env` 与可选挂载；纯 Docker 请把 `.env` 放进镜像工作目录或用 `-e` / `--env-file`。
+4. **文件位置不对**：应用读的是**项目根目录**的 `.env`（与 `app.py` 同级），不是宝塔站点根目录随便一个文件。
+5. 登录后改了密码：旧 Cookie 仍可能有效（会话用 `ADMIN_SECRET` 签名）；改密码后请清 Cookie 或改 `ADMIN_SECRET` 使旧会话失效。
+
+管理后台 → **系统状态** 页可查看 `.env` 路径，以及 `ADMIN_PASSWORD` 是 `set` 还是 `skipped_existing`（被进程环境顶掉）。
 
 功能：仪表盘统计、上传记录筛选/下载/删除、过期清理、引擎与 OCR 状态。
 

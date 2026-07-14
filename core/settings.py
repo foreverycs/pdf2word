@@ -5,12 +5,17 @@ Security policy (admin):
 - Weak defaults like ``admin123`` are rejected unless ``ALLOW_INSECURE_ADMIN=1``
   (local/dev/tests only).
 
-Optional project-root ``.env`` is loaded automatically (does not override
-already-set process environment variables).
+Optional project-root ``.env`` is loaded automatically.
+
+By default values already present in the process environment (Docker
+``environment:``, systemd, 宝塔「环境变量」) win over ``.env``.
+Set ``DOTENV_OVERRIDE=1`` (in the real process env *before* start, or as the
+first line of ``.env`` when the key is not already set) to let ``.env`` win.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import warnings
@@ -18,6 +23,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import FrozenSet, Optional
+
+logger = logging.getLogger("toolkit.settings")
 
 # Known-bad passwords that must never be used without ALLOW_INSECURE_ADMIN.
 _WEAK_PASSWORDS: FrozenSet[str] = frozenset(
@@ -45,23 +52,62 @@ _MIN_SECRET_LEN = 24
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _dotenv_loaded = False
+_dotenv_path_used: Optional[str] = None
+_dotenv_applied: dict[str, str] = {}  # key -> "set" | "skipped_existing"
 
 
 def load_dotenv(path: Optional[os.PathLike | str] = None, *, override: bool = False) -> bool:
     """Load KEY=VALUE pairs from a ``.env`` file into ``os.environ``.
 
-    Existing environment variables are kept unless ``override=True``.
+    Existing environment variables are kept unless ``override=True`` or
+    process env ``DOTENV_OVERRIDE`` is truthy.
+
     Returns True if a file was found and parsed.
     """
-    global _dotenv_loaded
+    global _dotenv_loaded, _dotenv_path_used, _dotenv_applied
     env_path = Path(path) if path else _PROJECT_ROOT / ".env"
-    if not env_path.is_file():
+    # Also try CWD .env (宝塔 / supervisor often start with different cwd).
+    candidates = [env_path]
+    cwd_env = Path.cwd() / ".env"
+    if cwd_env.resolve() != env_path.resolve():
+        candidates.append(cwd_env)
+
+    chosen: Optional[Path] = None
+    for cand in candidates:
+        if cand.is_file():
+            chosen = cand
+            break
+    if chosen is None:
         _dotenv_loaded = True
+        _dotenv_path_used = None
         return False
+
+    # If DOTENV_OVERRIDE already in process env, honour it; else read file first
+    # pass to see if .env itself sets DOTENV_OVERRIDE=1.
+    force = override or _env_bool("DOTENV_OVERRIDE", False)
     try:
-        text = env_path.read_text(encoding="utf-8")
+        text = chosen.read_text(encoding="utf-8-sig")  # strip BOM if present
     except OSError:
         return False
+
+    # Pre-scan for DOTENV_OVERRIDE inside the file when not already forced.
+    if not force:
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            if line.startswith("export "):
+                line = line[7:].strip()
+            k, _, v = line.partition("=")
+            if k.strip() == "DOTENV_OVERRIDE":
+                v = v.strip()
+                if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+                    v = v[1:-1]
+                if str(v).strip().lower() in ("1", "true", "yes", "on"):
+                    force = True
+                break
+
+    applied: dict[str, str] = {}
     for raw_line in text.splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#"):
@@ -77,10 +123,33 @@ def load_dotenv(path: Optional[os.PathLike | str] = None, *, override: bool = Fa
         value = value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
             value = value[1:-1]
-        if override or key not in os.environ:
+        # Strip accidental trailing inline comments: KEY=val  # comment
+        # only when value is unquoted and contains " #"
+        if " #" in value:
+            value = value.split(" #", 1)[0].rstrip()
+        if force or key not in os.environ:
             os.environ[key] = value
+            applied[key] = "set"
+        else:
+            applied[key] = "skipped_existing"
     _dotenv_loaded = True
+    _dotenv_path_used = str(chosen.resolve())
+    _dotenv_applied = applied
     return True
+
+
+def dotenv_status() -> dict:
+    """Non-secret diagnostics for admin/system page."""
+    return {
+        "dotenv_path": _dotenv_path_used or "(not found)",
+        "dotenv_loaded": _dotenv_loaded,
+        "ADMIN_PASSWORD": _dotenv_applied.get("ADMIN_PASSWORD", "(not in .env)"),
+        "ADMIN_SECRET": _dotenv_applied.get("ADMIN_SECRET", "(not in .env)"),
+        "ALLOW_INSECURE_ADMIN": _dotenv_applied.get(
+            "ALLOW_INSECURE_ADMIN", "(not in .env)"
+        ),
+        "DOTENV_OVERRIDE": os.environ.get("DOTENV_OVERRIDE", "(unset)"),
+    }
 
 
 def _ensure_dotenv() -> None:
@@ -285,4 +354,24 @@ def clear_settings_cache() -> None:
 def validate_security_settings() -> Settings:
     """Load and return settings; raises RuntimeError if insecure for production."""
     clear_settings_cache()
-    return get_settings()
+    s = get_settings()
+    st = dotenv_status()
+    pw = s.admin_password or ""
+    # Log without revealing the password (length + first/last char only if long).
+    hint = f"len={len(pw)}"
+    if len(pw) >= 4:
+        hint += f" starts={pw[0]!r} ends={pw[-1]!r}"
+    logger.info(
+        "Admin auth ready: dotenv=%s ADMIN_PASSWORD=%s (%s) override=%s",
+        st.get("dotenv_path"),
+        st.get("ADMIN_PASSWORD"),
+        hint,
+        st.get("DOTENV_OVERRIDE"),
+    )
+    if st.get("ADMIN_PASSWORD") == "skipped_existing":
+        logger.warning(
+            "ADMIN_PASSWORD in .env was IGNORED because the process already has "
+            "ADMIN_PASSWORD set (Docker compose environment, 宝塔 env, systemd, etc.). "
+            "Edit that source, or set DOTENV_OVERRIDE=1 and restart."
+        )
+    return s

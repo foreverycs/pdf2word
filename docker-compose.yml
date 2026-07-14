@@ -13,6 +13,10 @@ services:
     image: pdf2word-toolbox:latest
     ports:
       - "8002:8000"
+    # Project .env is loaded by the app. Prefer env_file over hardcoding secrets.
+    # Variables listed under environment: OVERRIDE .env unless DOTENV_OVERRIDE=1.
+    env_file:
+      - .env
     environment:
       LIBREOFFICE_PATH: /usr/bin/soffice
       HOME: /tmp
@@ -20,14 +24,17 @@ services:
       UPLOAD_RETENTION_DAYS: "5"
       UPLOAD_FILE_DIR: /app/file
       CONVERT_CONCURRENCY: "2"
-      # Dev-only: weak admin allowed. Production MUST set ALLOW_INSECURE_ADMIN=0
-      # (or omit it) and provide strong ADMIN_PASSWORD + ADMIN_SECRET.
-      ALLOW_INSECURE_ADMIN: "1"
-      ADMIN_PASSWORD: admin123
-      ADMIN_SECRET: dev-only-change-me-use-long-random
+      # Let container .env (env_file) win for admin keys when both exist:
+      DOTENV_OVERRIDE: "1"
+      # Fallback only if .env missing these keys (dev). Production: put secrets in .env only.
+      ALLOW_INSECURE_ADMIN: ${ALLOW_INSECURE_ADMIN:-1}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      ADMIN_SECRET: ${ADMIN_SECRET:-dev-only-change-me-use-long-random}
     volumes:
       # Persist upload history on the host
       - ./file:/app/file
+      # Optional: mount host .env so edits apply after container restart
+      - ./.env:/app/.env:ro
     mem_limit: 1g
     restart: unless-stopped
     healthcheck:

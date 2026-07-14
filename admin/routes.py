@@ -18,7 +18,7 @@ from admin.auth import (
     require_admin,
     set_session_cookie,
 )
-from core.settings import get_settings
+from core.settings import dotenv_status, get_settings
 from storage import (
     RETENTION_DAYS,
     cleanup_expired,
@@ -313,6 +313,7 @@ async def system_page(request: Request):
             "LIBREOFFICE_PATH": os.environ.get("LIBREOFFICE_PATH") or "(auto)",
             "PDF2WORD_OCR": os.environ.get("PDF2WORD_OCR") or "0",
             "MAX_UPLOAD_BYTES": str(get_settings().max_upload_bytes),
+            **{f".env {k}": v for k, v in dotenv_status().items()},
         },
     )
 

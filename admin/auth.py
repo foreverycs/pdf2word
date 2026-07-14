@@ -55,7 +55,14 @@ def verify_session_token(token: Optional[str]) -> bool:
 
 
 def check_password(password: str) -> bool:
-    return hmac.compare_digest(password or "", admin_password())
+    """Constant-time compare; never raises on length mismatch."""
+    a = (password or "").encode("utf-8")
+    b = (admin_password() or "").encode("utf-8")
+    if len(a) != len(b):
+        # Still do a dummy compare so timing is closer for wrong-length guesses.
+        hmac.compare_digest(a, a)
+        return False
+    return hmac.compare_digest(a, b)
 
 
 def is_admin(request: Request) -> bool:
