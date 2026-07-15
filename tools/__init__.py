@@ -161,13 +161,6 @@ def tools_by_category() -> List[Dict[str, Any]]:
     return [c for c in by_id.values() if c["tools"]]
 
 
-def get_tool(slug: str) -> Dict[str, Any] | None:
-    for t in TOOL_REGISTRY:
-        if t["slug"] == slug:
-            return t
-    return None
-
-
 def get_category(category_id: str) -> Dict[str, Any] | None:
     """Return one category dict with its ``tools`` list, or None."""
     for cat in tools_by_category():
@@ -203,7 +196,6 @@ __all__ = [
     "TOOL_REGISTRY",
     "TOOL_ROUTERS",
     "tools_by_category",
-    "get_tool",
     "get_category",
     "nav_categories",
     "pdf2word_router",

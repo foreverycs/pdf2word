@@ -46,10 +46,6 @@ def set_csrf_cookie(response: Response, token: str) -> None:
     )
 
 
-def clear_csrf_cookie(response: Response) -> None:
-    response.delete_cookie(COOKIE_NAME, path=_cookie_path())
-
-
 def verify_csrf(request: Request, form_token: Optional[str]) -> bool:
     """Return True when cookie and form field match (constant-time)."""
     cookie = (request.cookies.get(COOKIE_NAME) or "").strip()

@@ -88,18 +88,6 @@ def _iso(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _parse_iso(value: str) -> Optional[datetime]:
-    if not value:
-        return None
-    try:
-        text = value.strip()
-        if text.endswith("Z"):
-            text = text[:-1] + "+00:00"
-        return datetime.fromisoformat(text)
-    except ValueError:
-        return None
-
-
 def _safe_name(name: str, default: str = "file") -> str:
     base = os.path.basename(name or default)
     stem, ext = os.path.splitext(base)
@@ -194,15 +182,6 @@ def _row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
 
 def _cutoff() -> datetime:
     return _now() - timedelta(days=retention_days())
-
-
-def _is_expired(record: Dict[str, Any], cutoff: datetime) -> bool:
-    ts = _parse_iso(str(record.get("created_at") or ""))
-    if ts is None:
-        return True
-    if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=timezone.utc)
-    return ts < cutoff
 
 
 def _unlink_quiet(path: Path) -> None:

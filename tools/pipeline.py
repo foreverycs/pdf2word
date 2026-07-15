@@ -72,16 +72,6 @@ def map_conversion_error(
     return HTTPException(status_code=status, detail=detail)
 
 
-def raise_as_http(
-    exc: BaseException,
-    *,
-    label: str = "Conversion failed",
-    name_prefix: Optional[str] = None,
-) -> None:
-    """Raise mapped HTTPException from *exc* (always raises)."""
-    raise map_conversion_error(exc, label=label, name_prefix=name_prefix) from exc
-
-
 async def archive_input(
     *,
     tool: str,
@@ -102,6 +92,5 @@ async def archive_input(
 __all__ = [
     "TempWorkspace",
     "map_conversion_error",
-    "raise_as_http",
     "archive_input",
 ]
