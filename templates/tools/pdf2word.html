@@ -365,7 +365,10 @@
     pageBreaks.addEventListener('change', persistOpts);
     if (ocrEnabled) ocrEnabled.addEventListener('change', persistOpts);
 
-    const { fmtSize, downloadName, xhrPost, bindDropZone, saveBlob, xhrErrorMessage, appUrl } = window.ToolkitUpload;
+    const {
+      fmtSize, downloadName, xhrPost, bindDropZone, saveBlob, xhrErrorMessage, appUrl,
+      submitJobAndDownload,
+    } = window.ToolkitUpload;
 
     function setProgress(pct) {
       progress.classList.add('show');
@@ -472,32 +475,72 @@
         fd.append('ocr', 'true');
       }
 
-      const url = appUrl(multi ? '/tools/pdf2word/convert-batch' : '/tools/pdf2word/convert');
-      try {
-        const xhr = await xhrPost(url, fd, {
-          onProgress: (pct) => setProgress(pct),
-          onStatus: (text, cls) => { status.className = cls || 'info'; status.textContent = text; },
-          processHint: multi
-            ? `上传完成，正在批量转换 ${selected.length} 个文件… 请勿关闭页面`
-            : (ocrEnabled && ocrEnabled.checked && !ocrEnabled.disabled
-              ? '上传完成，正在转换（含 OCR）… 扫描件可能需数分钟，请勿关闭页面'
-              : '上传完成，正在转换… 复杂表格可能较慢，请勿关闭页面'),
-          longWaitSec: 15,
-        });
-        if (xhr.status < 200 || xhr.status >= 300) {
-          throw new Error(await xhrErrorMessage(xhr));
-        }
-        const blob = xhr.response;
-        const fallback = multi
-          ? 'pdf2word_batch.zip'
-          : selected[0].name.replace(/\.pdf$/i, '') + '.docx';
-        saveBlob(blob, downloadName(xhr.getResponseHeader('content-disposition'), fallback));
+      // Prefer async job API (202 + poll) so reverse-proxy timeouts are less painful.
+      // Fall back to synchronous convert if the async route is unavailable.
+      const asyncUrl = appUrl(multi
+        ? '/tools/pdf2word/convert-batch-async'
+        : '/tools/pdf2word/convert-async');
+      const syncUrl = appUrl(multi
+        ? '/tools/pdf2word/convert-batch'
+        : '/tools/pdf2word/convert');
+      const fallbackName = multi
+        ? 'pdf2word_batch.zip'
+        : selected[0].name.replace(/\.pdf$/i, '') + '.docx';
+      const useOcr = !!(ocrEnabled && ocrEnabled.checked && !ocrEnabled.disabled);
+      const processHint = multi
+        ? `上传完成，批量任务已提交（${selected.length} 个）…`
+        : (useOcr
+          ? '上传完成，任务已提交（含 OCR）… 扫描件可能需数分钟'
+          : '上传完成，任务已提交… 复杂表格可能较慢');
 
-        const pages = xhr.getResponseHeader('X-Pages') || '?';
-        const tables = xhr.getResponseHeader('X-Tables') || '0';
-        const images = xhr.getResponseHeader('X-Images') || '0';
-        const files = xhr.getResponseHeader('X-Files');
-        const warns = (xhr.getResponseHeader('X-Warnings') || '').split(',').filter(Boolean);
+      try {
+        let pages = '?';
+        let tables = '0';
+        let images = '0';
+        let files = multi ? String(selected.length) : null;
+        let warns = [];
+
+        try {
+          const got = await submitJobAndDownload(asyncUrl, fd, {
+            onProgress: (pct) => setProgress(pct),
+            onStatus: (text, cls) => { status.className = cls || 'info'; status.textContent = text; },
+            processHint,
+            fallbackName,
+          });
+          const h = got.headers;
+          pages = h.get('X-Pages') || (got.job.result && got.job.result.pages) || pages;
+          tables = h.get('X-Tables') || (got.job.result && got.job.result.tables) || tables;
+          images = h.get('X-Images') || (got.job.result && got.job.result.images) || images;
+          files = h.get('X-Files') || (got.job.result && got.job.result.files) || files;
+          const wHead = h.get('X-Warnings') || '';
+          warns = wHead
+            ? wHead.split(',').filter(Boolean)
+            : ((got.job.result && got.job.result.warnings) || []);
+        } catch (asyncErr) {
+          // Network / 404 on async route → legacy sync body download.
+          status.className = 'info';
+          status.textContent = '改用同步转换…';
+          const xhr = await xhrPost(syncUrl, fd, {
+            onProgress: (pct) => setProgress(pct),
+            onStatus: (text, cls) => { status.className = cls || 'info'; status.textContent = text; },
+            processHint: multi
+              ? `上传完成，正在批量转换 ${selected.length} 个文件… 请勿关闭页面`
+              : (useOcr
+                ? '上传完成，正在转换（含 OCR）… 扫描件可能需数分钟，请勿关闭页面'
+                : '上传完成，正在转换… 复杂表格可能较慢，请勿关闭页面'),
+            longWaitSec: 15,
+          });
+          if (xhr.status < 200 || xhr.status >= 300) {
+            throw new Error(await xhrErrorMessage(xhr));
+          }
+          saveBlob(xhr.response, downloadName(xhr.getResponseHeader('content-disposition'), fallbackName));
+          pages = xhr.getResponseHeader('X-Pages') || pages;
+          tables = xhr.getResponseHeader('X-Tables') || tables;
+          images = xhr.getResponseHeader('X-Images') || images;
+          files = xhr.getResponseHeader('X-Files') || files;
+          warns = (xhr.getResponseHeader('X-Warnings') || '').split(',').filter(Boolean);
+        }
+
         let line = multi
           ? `完成：${files || selected.length} 个文件，共 ${pages} 页、${tables} 个表格、${images} 张图。`
           : `完成：${pages} 页、${tables} 个表格、${images} 张图，文件已下载。`;

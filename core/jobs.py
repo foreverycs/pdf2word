@@ -7,11 +7,15 @@ worker; multi-worker deployments need a shared backend later.
 from __future__ import annotations
 
 import asyncio
+import logging
 import secrets
+import shutil
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, Optional
+
+logger = logging.getLogger("toolkit.jobs")
 
 
 class JobStatus(str, Enum):
@@ -32,17 +36,21 @@ class Job:
     message: str = ""
     error: Optional[str] = None
     result: Optional[Dict[str, Any]] = None
-    # Absolute paths owned by the job (cleaned by reclaim).
+    # Absolute paths owned by the job (cleaned by reclaim / error paths).
     work_dir: Optional[str] = None
     output_path: Optional[str] = None
     download_name: Optional[str] = None
     media_type: Optional[str] = None
+    # Extra response headers for the download (e.g. X-Pages).
+    response_headers: Optional[Dict[str, str]] = None
 
 
 _jobs: Dict[str, Job] = {}
 _lock = asyncio.Lock()
 # Drop finished jobs after this many seconds.
 _JOB_TTL_SEC = 3600.0
+# Track background tasks so they are not GC'd mid-flight.
+_bg_tasks: set[asyncio.Task] = set()
 
 
 def _now() -> float:
@@ -78,6 +86,11 @@ async def update_job(job_id: str, **fields: Any) -> Optional[Job]:
         return job
 
 
+def _cleanup_work_dir(work_dir: Optional[str]) -> None:
+    if work_dir:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
 def _reclaim_unlocked() -> int:
     cutoff = _now() - _JOB_TTL_SEC
     dead = [
@@ -87,10 +100,8 @@ def _reclaim_unlocked() -> int:
     ]
     for jid in dead:
         job = _jobs.pop(jid, None)
-        if job and job.work_dir:
-            import shutil
-
-            shutil.rmtree(job.work_dir, ignore_errors=True)
+        if job:
+            _cleanup_work_dir(job.work_dir)
     return len(dead)
 
 
@@ -120,6 +131,10 @@ async def run_job(
             result=result if isinstance(result, dict) else {"value": result},
         )
     except Exception as exc:
+        job = await get_job(job_id)
+        if job and job.work_dir:
+            _cleanup_work_dir(job.work_dir)
+            await update_job(job_id, work_dir=None, output_path=None)
         await update_job(
             job_id,
             status=JobStatus.error,
@@ -129,9 +144,80 @@ async def run_job(
         )
 
 
+async def run_job_async(
+    job_id: str,
+    coro_factory: Callable[[], Awaitable[Optional[Dict[str, Any]]]],
+) -> None:
+    """Run an async coroutine for a job; apply result fields when done.
+
+    ``coro_factory`` should return a dict of optional job field updates
+    (e.g. ``result``, ``response_headers``, ``output_path``) or None.
+    On failure the job ``work_dir`` is deleted.
+    """
+    await update_job(
+        job_id, status=JobStatus.running, progress=0.05, message="running"
+    )
+    try:
+        updates = await coro_factory()
+        fields: Dict[str, Any] = {
+            "status": JobStatus.done,
+            "progress": 1.0,
+            "message": "done",
+        }
+        if isinstance(updates, dict):
+            fields.update(updates)
+            if "result" in updates and not isinstance(updates.get("result"), dict):
+                fields["result"] = {"value": updates["result"]}
+        await update_job(job_id, **fields)
+    except Exception as exc:
+        logger.exception("job_failed id=%s", job_id)
+        job = await get_job(job_id)
+        if job and job.work_dir:
+            _cleanup_work_dir(job.work_dir)
+            await update_job(job_id, work_dir=None, output_path=None)
+        detail = getattr(exc, "detail", None) or str(exc) or type(exc).__name__
+        await update_job(
+            job_id,
+            status=JobStatus.error,
+            progress=1.0,
+            message="error",
+            error=str(detail),
+        )
+
+
+def schedule_job(
+    job_id: str,
+    coro_factory: Callable[[], Awaitable[Optional[Dict[str, Any]]]],
+) -> None:
+    """Fire-and-forget ``run_job_async`` on the running event loop."""
+
+    async def _runner() -> None:
+        await run_job_async(job_id, coro_factory)
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # No loop (sync tests): run inline is not possible for async factory.
+        raise RuntimeError("schedule_job requires a running event loop")
+
+    task = loop.create_task(_runner())
+    _bg_tasks.add(task)
+
+    def _done(t: asyncio.Task) -> None:
+        _bg_tasks.discard(t)
+        try:
+            exc = t.exception()
+        except asyncio.CancelledError:
+            return
+        if exc is not None:
+            logger.error("background job task crashed id=%s: %s", job_id, exc)
+
+    task.add_done_callback(_done)
+
+
 def job_public_dict(job: Job) -> Dict[str, Any]:
     """JSON-safe view for clients (no absolute paths)."""
-    return {
+    body: Dict[str, Any] = {
         "id": job.id,
         "tool": job.tool,
         "status": job.status.value,
@@ -142,9 +228,35 @@ def job_public_dict(job: Job) -> Dict[str, Any]:
         "updated_at": job.updated_at,
         "has_result": job.status == JobStatus.done and bool(job.output_path),
         "download_name": job.download_name,
+        "media_type": job.media_type,
     }
+    if job.result:
+        # Expose safe stats for UI (pages, tables, warnings, …).
+        safe = {
+            k: v
+            for k, v in job.result.items()
+            if k
+            in (
+                "pages",
+                "tables",
+                "text_blocks",
+                "images",
+                "lines",
+                "warnings",
+                "files",
+                "batch",
+            )
+        }
+        if safe:
+            body["result"] = safe
+    return body
 
 
 def reset_jobs() -> None:
     """Clear all jobs (tests)."""
+    for job in list(_jobs.values()):
+        _cleanup_work_dir(job.work_dir)
     _jobs.clear()
+    for t in list(_bg_tasks):
+        t.cancel()
+    _bg_tasks.clear()

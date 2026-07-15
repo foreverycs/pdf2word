@@ -23,7 +23,7 @@ _SAFE_NAME_RE = re.compile(r"[^\w\u4e00-\u9fff.\-]+", re.UNICODE)
 
 # Bump when shipping CSS/JS that must invalidate CDN/browser caches.
 # Also mixed with file mtime so local edits bust cache without code changes.
-_ASSET_BUILD = os.environ.get("STATIC_ASSET_VERSION") or "20260715a"
+_ASSET_BUILD = os.environ.get("STATIC_ASSET_VERSION") or "20260715b"
 
 
 def effective_root_path(request: Optional[Request] = None) -> str:

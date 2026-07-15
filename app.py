@@ -335,10 +335,12 @@ async def api_job_download(job_id: str):
         raise HTTPException(status_code=409, detail="Job has no downloadable result yet")
     if not os.path.isfile(job.output_path):
         raise HTTPException(status_code=410, detail="Job result expired or missing")
+    headers = dict(job.response_headers or {})
     return FileResponse(
         job.output_path,
         filename=job.download_name or os.path.basename(job.output_path),
         media_type=job.media_type or "application/octet-stream",
+        headers=headers,
     )
 
 

@@ -219,11 +219,205 @@
     return root ? root + path : path;
   }
 
+  /**
+   * POST FormData expecting a JSON body (e.g. 202 Accepted async job).
+   *
+   * @returns {Promise<{status:number, body:any, headers:Headers}>}
+   */
+  function xhrPostJson(url, formData, opts) {
+    opts = opts || {};
+    return new Promise(function (resolve, reject) {
+      var xhr = new XMLHttpRequest();
+      xhr.open("POST", url);
+      xhr.responseType = "text";
+      xhr.upload.onprogress = function (e) {
+        if (e.lengthComputable && opts.onProgress) {
+          opts.onProgress((e.loaded / e.total) * 70, "upload");
+        }
+        if (opts.onStatus && e.lengthComputable) {
+          opts.onStatus(
+            "上传中… " + Math.round((e.loaded / e.total) * 100) + "%",
+            "info"
+          );
+        }
+      };
+      xhr.upload.onload = function () {
+        if (opts.onProgress) opts.onProgress(72, "upload");
+        if (opts.onStatus) {
+          opts.onStatus(opts.processHint || "上传完成，任务已排队…", "info");
+        }
+      };
+      xhr.onload = function () {
+        var body = null;
+        try {
+          body = JSON.parse(xhr.responseText || "null");
+        } catch (e) {
+          body = { detail: xhr.responseText || "Invalid JSON" };
+        }
+        if (xhr.status < 200 || xhr.status >= 300) {
+          reject(new Error(errDetail(body && body.detail) || "HTTP " + xhr.status));
+          return;
+        }
+        resolve({ status: xhr.status, body: body, xhr: xhr });
+      };
+      xhr.onerror = function () {
+        reject(new Error("网络错误"));
+      };
+      xhr.onabort = function () {
+        reject(new Error("已取消"));
+      };
+      xhr.send(formData);
+    });
+  }
+
+  /**
+   * Poll ``/api/jobs/{id}`` until done/error or timeout.
+   *
+   * @param {string} pollUrl absolute or app-relative path
+   * @param {{
+   *   intervalMs?: number,
+   *   timeoutMs?: number,
+   *   onProgress?: (pct:number, phase:string) => void,
+   *   onStatus?: (text:string, cls?:string) => void
+   * }} [opts]
+   * @returns {Promise<object>} final job JSON
+   */
+  function pollJob(pollUrl, opts) {
+    opts = opts || {};
+    var interval = opts.intervalMs || 1000;
+    var timeout = typeof opts.timeoutMs === "number" ? opts.timeoutMs : 30 * 60 * 1000;
+    var url = pollUrl.indexOf("http") === 0 ? pollUrl : appUrl(pollUrl);
+    var started = Date.now();
+
+    return new Promise(function (resolve, reject) {
+      function tick() {
+        if (Date.now() - started > timeout) {
+          reject(new Error("转换超时。请缩小页数或关闭 OCR 后重试"));
+          return;
+        }
+        fetch(url, { credentials: "same-origin" })
+          .then(function (r) {
+            if (!r.ok) {
+              return r.json().then(
+                function (j) {
+                  throw new Error(errDetail(j.detail) || "HTTP " + r.status);
+                },
+                function () {
+                  throw new Error("HTTP " + r.status);
+                }
+              );
+            }
+            return r.json();
+          })
+          .then(function (job) {
+            var sec = Math.round((Date.now() - started) / 1000);
+            var p = typeof job.progress === "number" ? job.progress : 0;
+            // Map 0..1 server progress into 75..98 UI band after upload.
+            if (opts.onProgress) {
+              opts.onProgress(75 + Math.min(23, p * 23), "process");
+            }
+            if (opts.onStatus) {
+              var label =
+                job.status === "queued"
+                  ? "排队中…"
+                  : job.status === "running"
+                    ? "转换中…"
+                    : job.message || job.status;
+              if (sec >= 15 && (job.status === "running" || job.status === "queued")) {
+                label += "（已 " + sec + " 秒）";
+              }
+              opts.onStatus(label, "info");
+            }
+            if (job.status === "done") {
+              resolve(job);
+              return;
+            }
+            if (job.status === "error") {
+              reject(new Error(job.error || "转换失败"));
+              return;
+            }
+            setTimeout(tick, interval);
+          })
+          .catch(function (err) {
+            reject(err instanceof Error ? err : new Error(String(err)));
+          });
+      }
+      tick();
+    });
+  }
+
+  /**
+   * Download a completed job result and trigger browser save.
+   *
+   * @returns {Promise<{blob:Blob, filename:string, headers:Headers}>}
+   */
+  async function downloadJob(downloadUrl, fallbackName) {
+    var url =
+      downloadUrl.indexOf("http") === 0 ? downloadUrl : appUrl(downloadUrl);
+    var res = await fetch(url, { credentials: "same-origin" });
+    if (!res.ok) {
+      var msg = "HTTP " + res.status;
+      try {
+        var j = await res.json();
+        msg = errDetail(j.detail) || msg;
+      } catch (e) {
+        /* keep */
+      }
+      throw new Error(msg);
+    }
+    var blob = await res.blob();
+    var name = downloadName(
+      res.headers.get("content-disposition"),
+      fallbackName || "download.bin"
+    );
+    saveBlob(blob, name);
+    return { blob: blob, filename: name, headers: res.headers };
+  }
+
+  /**
+   * Upload → async job → poll → download. Convenience for tool pages.
+   *
+   * @param {string} submitUrl
+   * @param {FormData} formData
+   * @param {object} [opts] same progress hooks as xhrPost + fallbackName
+   * @returns {Promise<{job:object, filename:string, headers:Headers}>}
+   */
+  async function submitJobAndDownload(submitUrl, formData, opts) {
+    opts = opts || {};
+    var submitted = await xhrPostJson(submitUrl, formData, opts);
+    var job = submitted.body || {};
+    if (!job.id && !job.poll_url) {
+      throw new Error("服务器未返回任务 ID");
+    }
+    if (opts.onStatus) {
+      opts.onStatus("任务已创建，等待转换…", "info");
+    }
+    if (opts.onProgress) opts.onProgress(75, "process");
+    var finished = await pollJob(job.poll_url || "/api/jobs/" + job.id, opts);
+    if (opts.onProgress) opts.onProgress(98, "process");
+    var dl =
+      finished.download_url ||
+      job.download_url ||
+      "/api/jobs/" + (finished.id || job.id) + "/download";
+    var fallback =
+      opts.fallbackName ||
+      finished.download_name ||
+      job.download_name ||
+      "download.bin";
+    var got = await downloadJob(dl, fallback);
+    if (opts.onProgress) opts.onProgress(100, "done");
+    return { job: finished, filename: got.filename, headers: got.headers };
+  }
+
   global.ToolkitUpload = {
     fmtSize: fmtSize,
     downloadName: downloadName,
     errDetail: errDetail,
     xhrPost: xhrPost,
+    xhrPostJson: xhrPostJson,
+    pollJob: pollJob,
+    downloadJob: downloadJob,
+    submitJobAndDownload: submitJobAndDownload,
     bindDropZone: bindDropZone,
     saveBlob: saveBlob,
     xhrErrorMessage: xhrErrorMessage,
