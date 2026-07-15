@@ -506,9 +506,15 @@
           files = xhr.getResponseHeader('X-Files') || files;
         }
 
+        const doneCount = multi ? (files || selected.length) : 1;
+        // Clear selection so the page is ready for the next job.
+        selected = [];
+        fileInput.value = '';
+        renderList();
+
         status.className = 'ok';
         status.textContent = multi
-          ? `完成：${files || selected.length} 个文件已打包下载${engine ? '（引擎：' + engine + '）' : ''}。`
+          ? `完成：${doneCount} 个文件已打包下载${engine ? '（引擎：' + engine + '）' : ''}。`
           : `完成：PDF 已下载${engine ? '（引擎：' + engine + '）' : ''}。`;
       } catch (e) {
         status.className = 'err';

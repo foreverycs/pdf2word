@@ -728,8 +728,14 @@
         showPreview(xhr.response);
 
         var inPages = xhr.getResponseHeader('X-Input-Pages') || '?';
+        var single = selected.length === 1;
+        // Clear selection so the page is ready for the next job (preview stays).
+        selected = [];
+        fileInput.value = '';
+        renderList();
+
         status.className = 'ok';
-        if (selected.length === 1) {
+        if (single) {
           status.textContent = '\u5B8C\u6210\uFF1A\u5DF2\u6392\u5728 A4 \u4E0A\u534A\u9875\uFF0C\u53EF\u9884\u89C8\u5E76\u6253\u5370\u3002';
         } else {
           status.textContent = '\u5B8C\u6210\uFF1A' + inPages + ' \u5F20\u5DF2\u5408\u5E76\u4E3A 1 \u9875 A4\uFF0C\u53EF\u9884\u89C8\u5E76\u6253\u5370\u3002';

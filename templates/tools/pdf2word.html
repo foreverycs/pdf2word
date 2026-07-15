@@ -556,8 +556,14 @@
           warns = (xhr.getResponseHeader('X-Warnings') || '').split(',').filter(Boolean);
         }
 
+        const doneCount = multi ? (files || selected.length) : 1;
+        // Clear selection so the page is ready for the next job.
+        selected = [];
+        fileInput.value = '';
+        renderList();
+
         let line = multi
-          ? `完成：${files || selected.length} 个文件，共 ${pages} 页、${tables} 个表格、${images} 张图。`
+          ? `完成：${doneCount} 个文件，共 ${pages} 页、${tables} 个表格、${images} 张图。`
           : `完成：${pages} 页、${tables} 个表格、${images} 张图，文件已下载。`;
         if (warns.includes('image_only')) {
           status.className = 'warn';
