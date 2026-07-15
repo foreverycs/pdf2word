@@ -9,8 +9,11 @@
   <script>window.__ROOT__ = {{ root_path()|tojson }};</script>
 </head>
 <body class="admin-body">
-  <div class="admin-layout">
-    <aside class="admin-side">
+  <!-- Drawer + backdrop sit outside .admin-layout so mobile fixed positioning
+       cannot leave residual grid/block tracks (e.g. only the logout foot visible). -->
+  <div class="admin-side-backdrop" id="adminSideBackdrop" hidden></div>
+  <aside class="admin-side" id="adminSide" aria-label="管理后台导航">
+    <div class="admin-side-top">
       <a class="admin-brand" href="{{ url_path('/admin') }}">
         <div class="admin-brand-mark">管</div>
         <div>
@@ -18,47 +21,126 @@
           <div class="admin-brand-sub">v{{ app_version }}</div>
         </div>
       </a>
-      <nav class="admin-nav">
-        <a href="{{ url_path('/admin') }}" class="{% if active == 'dashboard' %}active{% endif %}">
-          <svg class="admin-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
-          </svg>
-          仪表盘
-        </a>
-        <a href="{{ url_path('/admin/uploads') }}" class="{% if active == 'uploads' %}active{% endif %}">
-          <svg class="admin-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15l3-3 3 3"/>
-          </svg>
-          上传记录
-        </a>
-        <a href="{{ url_path('/admin/system') }}" class="{% if active == 'system' %}active{% endif %}">
-          <svg class="admin-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="3"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
-          </svg>
-          系统状态
-        </a>
-      </nav>
-      <div class="admin-side-foot">
-        <a href="{{ url_path('/') }}">
+      <button type="button" class="admin-side-close" id="adminSideClose" aria-label="收起侧边栏">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+    <nav class="admin-nav">
+      <a href="{{ url_path('/admin') }}" class="{% if active == 'dashboard' %}active{% endif %}">
+        <svg class="admin-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+        仪表盘
+      </a>
+      <a href="{{ url_path('/admin/uploads') }}" class="{% if active == 'uploads' %}active{% endif %}">
+        <svg class="admin-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15l3-3 3 3"/>
+        </svg>
+        上传记录
+      </a>
+      <a href="{{ url_path('/admin/system') }}" class="{% if active == 'system' %}active{% endif %}">
+        <svg class="admin-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+        </svg>
+        系统状态
+      </a>
+    </nav>
+    <div class="admin-side-foot">
+      <a href="{{ url_path('/') }}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M19 12H5M11 18l-6-6 6-6"/>
+        </svg>
+        返回前台
+      </a>
+      <form method="post" action="{{ url_path('/admin/logout') }}">
+        <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
+        <button type="submit">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M19 12H5M11 18l-6-6 6-6"/>
+            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
           </svg>
-          返回前台
-        </a>
-        <form method="post" action="{{ url_path('/admin/logout') }}">
-          <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
-          <button type="submit">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
-            </svg>
-            退出登录
-          </button>
-        </form>
+          退出登录
+        </button>
+      </form>
+    </div>
+  </aside>
+
+  <div class="admin-layout">
+    <header class="admin-topbar" id="adminTopbar">
+      <button type="button" class="admin-menu-btn" id="adminMenuBtn" aria-label="打开侧边栏" aria-controls="adminSide" aria-expanded="false">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+      </button>
+      <div class="admin-topbar-brand">
+        <span class="admin-topbar-mark">管</span>
+        <div class="admin-topbar-text">
+          <span class="admin-topbar-title">管理后台</span>
+          <span class="admin-topbar-sub">v{{ app_version }}</span>
+        </div>
       </div>
-    </aside>
+    </header>
     <main class="admin-main">
       {% block content %}{% endblock %}
     </main>
   </div>
+  <script>
+    (function () {
+      var body = document.body;
+      var side = document.getElementById('adminSide');
+      var backdrop = document.getElementById('adminSideBackdrop');
+      var openBtn = document.getElementById('adminMenuBtn');
+      var closeBtn = document.getElementById('adminSideClose');
+      if (!side || !backdrop || !openBtn) return;
+
+      function isMobileNav() {
+        return window.matchMedia('(max-width: 860px)').matches;
+      }
+
+      function setOpen(open) {
+        body.classList.toggle('admin-nav-open', open);
+        openBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        side.setAttribute('aria-hidden', open || !isMobileNav() ? 'false' : 'true');
+        if (open) {
+          backdrop.hidden = false;
+          body.style.overflow = 'hidden';
+        } else {
+          backdrop.hidden = true;
+          if (!document.querySelector('.preview-overlay.show')) {
+            body.style.overflow = '';
+          }
+        }
+      }
+
+      function closeSide() { setOpen(false); }
+      function toggleSide() { setOpen(!body.classList.contains('admin-nav-open')); }
+
+      openBtn.addEventListener('click', toggleSide);
+      if (closeBtn) closeBtn.addEventListener('click', closeSide);
+      backdrop.addEventListener('click', closeSide);
+
+      side.querySelectorAll('a').forEach(function (a) {
+        a.addEventListener('click', function () {
+          if (isMobileNav()) closeSide();
+        });
+      });
+
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && body.classList.contains('admin-nav-open')) {
+          closeSide();
+        }
+      });
+
+      window.addEventListener('resize', function () {
+        if (!isMobileNav()) closeSide();
+      });
+
+      // Initial: closed on mobile, always "visible" to a11y on desktop
+      if (isMobileNav()) {
+        side.setAttribute('aria-hidden', 'true');
+      }
+    })();
+  </script>
 </body>
 </html>

@@ -30,6 +30,7 @@ from core.version import __version__
 from storage import (
     cleanup_expired,
     delete_record,
+    delete_records,
     file_dir,
     get_record,
     list_records,
@@ -264,6 +265,36 @@ async def uploads_page(
         retention_days=retention_days(),
         flash=request.query_params.get("msg"),
     )
+
+
+@router.post("/uploads/batch-delete")
+async def uploads_batch_delete(
+    request: Request,
+    csrf_token: Optional[str] = Form(None),
+):
+    """Delete multiple upload records selected in the admin table."""
+    redir = require_admin(request)
+    if redir:
+        return redir
+    if not verify_csrf(request, csrf_token):
+        raise HTTPException(status_code=403, detail="CSRF validation failed")
+
+    form = await request.form()
+    raw_ids = form.getlist("ids")
+    ids = [str(v).strip() for v in raw_ids if str(v).strip()]
+    # Cap batch size to avoid accidental huge deletes / DoS via form spam.
+    max_batch = 200
+    if len(ids) > max_batch:
+        ids = ids[:max_batch]
+
+    if not ids:
+        return _redirect(
+            _admin_url("/admin/uploads", request) + "?msg=" + quote("no selection")
+        )
+
+    removed = delete_records(ids)
+    msg = f"deleted {removed}" if removed else "not found"
+    return _redirect(_admin_url("/admin/uploads", request) + "?msg=" + quote(msg))
 
 
 @router.post("/uploads/{record_id}/delete")

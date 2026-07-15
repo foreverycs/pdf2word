@@ -7,11 +7,12 @@
     <p>仅归档输入文件，默认保留 {{ retention_days }} 天</p>
   </div>
   <div class="admin-actions">
-    <form method="post" action="{{ url_path('/admin/cleanup') }}" onsubmit="return confirm('清理所有过期记录？');">
+    <form method="post" action="{{ url_path('/admin/cleanup') }}">
       <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
-      <button class="admin-btn" type="submit">
+      <button class="admin-btn delete-confirm-btn" type="submit"
+              data-label-idle="清理过期" data-label-armed="确认清理">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-        清理过期
+        <span class="delete-confirm-label">清理过期</span>
       </button>
     </form>
   </div>
@@ -45,67 +46,84 @@
   {% endif %}
 </form>
 
-<div class="admin-panel">
-  <div class="admin-panel-h">
-    <span>共 {{ items|length }} 条记录</span>
-  </div>
-  <div class="admin-table-wrap">
-    <table class="admin-table">
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>时间</th>
-          <th>工具</th>
-          <th>原始文件名</th>
-          <th>大小</th>
-          <th>文件</th>
-          <th>操作</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in items %}
-        <tr>
-          <td class="admin-mono">{{ r.id }}</td>
-          <td class="admin-mono">{{ r.created_at }}</td>
-          <td><span class="admin-badge">{{ r.tool }}</span></td>
-          <td>{{ r.original_name }}</td>
-          <td class="admin-muted">
-            {% if r.input_bytes %}{{ '%.1f'|format(r.input_bytes / 1024) }} KB{% else %}—{% endif %}
-          </td>
-          <td>
-            {% if r.input_exists %}
-            <span class="admin-badge ok">在位</span>
-            {% else %}
-            <span class="admin-badge err">缺失</span>
-            {% endif %}
-          </td>
-          <td style="white-space:nowrap">
-            {% if r.input_exists %}
-            <a class="admin-btn" href="{{ url_path('/admin/uploads/' ~ r.id ~ '/download') }}" >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              下载
-            </a>
-            <button class="admin-btn preview-btn" type="button" data-id="{{ r.id }}" data-name="{{ r.original_name }}">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-              预览
-            </button>
-            {% endif %}
-            <form method="post" action="{{ url_path('/admin/uploads/' ~ r.id ~ '/delete') }}"  style="display:inline">
-              <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
-              <button class="admin-btn admin-btn-danger" type="submit">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-                删除
+<form id="batchDeleteForm" method="post" action="{{ url_path('/admin/uploads/batch-delete') }}">
+  <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
+
+  <div class="admin-panel">
+    <div class="admin-panel-h admin-batch-bar">
+      <span>共 {{ items|length }} 条记录</span>
+      <div class="admin-batch-actions">
+        <span class="admin-batch-count admin-muted" id="batchCount">已选 0</span>
+        <button class="admin-btn admin-btn-danger delete-confirm-btn" type="submit" id="batchDeleteBtn" disabled
+                data-label-idle="批量删除" data-label-armed="确认删除">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+          <span class="delete-confirm-label">批量删除</span>
+        </button>
+      </div>
+    </div>
+    <div class="admin-table-wrap">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th class="admin-col-check">
+              <input type="checkbox" id="selectAll" title="全选当前页" aria-label="全选当前页" {% if not items %}disabled{% endif %} />
+            </th>
+            <th>ID</th>
+            <th>时间</th>
+            <th>工具</th>
+            <th>原始文件名</th>
+            <th>大小</th>
+            <th>文件</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in items %}
+          <tr>
+            <td class="admin-col-check">
+              <input type="checkbox" class="row-check" name="ids" value="{{ r.id }}" aria-label="选择 {{ r.id }}" />
+            </td>
+            <td class="admin-mono">{{ r.id }}</td>
+            <td class="admin-mono">{{ r.created_at }}</td>
+            <td><span class="admin-badge">{{ r.tool }}</span></td>
+            <td>{{ r.original_name }}</td>
+            <td class="admin-muted">
+              {% if r.input_bytes %}{{ '%.1f'|format(r.input_bytes / 1024) }} KB{% else %}—{% endif %}
+            </td>
+            <td>
+              {% if r.input_exists %}
+              <span class="admin-badge ok">在位</span>
+              {% else %}
+              <span class="admin-badge err">缺失</span>
+              {% endif %}
+            </td>
+            <td style="white-space:nowrap">
+              {% if r.input_exists %}
+              <a class="admin-btn" href="{{ url_path('/admin/uploads/' ~ r.id ~ '/download') }}" >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                下载
+              </a>
+              <button class="admin-btn preview-btn" type="button" data-id="{{ r.id }}" data-name="{{ r.original_name }}">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                预览
               </button>
-            </form>
-          </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="7" class="admin-muted" style="text-align:center;padding:32px 0">没有匹配的记录</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+              {% endif %}
+              <button class="admin-btn admin-btn-danger delete-confirm-btn" type="submit"
+                      formaction="{{ url_path('/admin/uploads/' ~ r.id ~ '/delete') }}"
+                      data-label-idle="删除" data-label-armed="确认删除">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                <span class="delete-confirm-label">删除</span>
+              </button>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="8" class="admin-muted" style="text-align:center;padding:32px 0">没有匹配的记录</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
-</div>
+</form>
 
 <div class="preview-overlay" id="previewOverlay" onclick="closePreview(event)">
   <div class="preview-modal" id="previewModal">
@@ -171,5 +189,97 @@
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape' && overlay.classList.contains('show')) closePreview();
   });
+
+  // --- Batch selection ---
+  var selectAll = document.getElementById('selectAll');
+  var batchCount = document.getElementById('batchCount');
+  var batchDeleteBtn = document.getElementById('batchDeleteBtn');
+  var ARM_TIMEOUT_MS = 4000;
+
+  function rowChecks() {
+    return Array.prototype.slice.call(document.querySelectorAll('.row-check'));
+  }
+
+  function setDeleteLabel(btn, armed) {
+    var label = btn.querySelector('.delete-confirm-label');
+    if (!label) return;
+    var text = armed
+      ? (btn.getAttribute('data-label-armed') || '确认删除')
+      : (btn.getAttribute('data-label-idle') || '删除');
+    label.textContent = text;
+  }
+
+  function disarmDeleteBtn(btn) {
+    if (!btn) return;
+    btn.classList.remove('is-armed');
+    setDeleteLabel(btn, false);
+    if (btn._armTimer) {
+      clearTimeout(btn._armTimer);
+      btn._armTimer = null;
+    }
+  }
+
+  function disarmAllDeleteBtns(except) {
+    document.querySelectorAll('.delete-confirm-btn.is-armed').forEach(function(btn) {
+      if (btn !== except) disarmDeleteBtn(btn);
+    });
+  }
+
+  function armDeleteBtn(btn) {
+    disarmAllDeleteBtns(btn);
+    btn.classList.add('is-armed');
+    setDeleteLabel(btn, true);
+    if (btn._armTimer) clearTimeout(btn._armTimer);
+    btn._armTimer = setTimeout(function() { disarmDeleteBtn(btn); }, ARM_TIMEOUT_MS);
+  }
+
+  function updateBatchUI() {
+    var checks = rowChecks();
+    var selected = checks.filter(function(c) { return c.checked; });
+    var n = selected.length;
+    batchCount.textContent = '已选 ' + n;
+    batchDeleteBtn.disabled = n === 0;
+    if (n === 0) disarmDeleteBtn(batchDeleteBtn);
+    if (selectAll) {
+      selectAll.checked = checks.length > 0 && n === checks.length;
+      selectAll.indeterminate = n > 0 && n < checks.length;
+    }
+  }
+
+  if (selectAll) {
+    selectAll.addEventListener('change', function() {
+      rowChecks().forEach(function(c) { c.checked = selectAll.checked; });
+      updateBatchUI();
+    });
+  }
+
+  document.addEventListener('change', function(e) {
+    if (e.target && e.target.classList && e.target.classList.contains('row-check')) {
+      updateBatchUI();
+    }
+  });
+
+  // Two-click delete: first click turns red, second click submits.
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest && e.target.closest('.delete-confirm-btn');
+    if (!btn || btn.disabled) return;
+    if (btn.classList.contains('is-armed')) {
+      // Second click: allow native submit.
+      return;
+    }
+    e.preventDefault();
+    armDeleteBtn(btn);
+  }, true);
+
+  document.addEventListener('click', function(e) {
+    if (e.target.closest && e.target.closest('.delete-confirm-btn')) return;
+    disarmAllDeleteBtns();
+  });
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') disarmAllDeleteBtns();
+  });
+
+  updateBatchUI();
 </script>
 {% endblock %}

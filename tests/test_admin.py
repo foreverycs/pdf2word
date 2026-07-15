@@ -159,6 +159,8 @@ def test_admin_uploads_delete_and_download(admin_client):
     assert page.status_code == 200
     assert "a.pdf" in page.text
     assert rec["id"] in page.text
+    assert "batch-delete" in page.text
+    assert "批量删除" in page.text
 
     dl = client.get(f"/admin/uploads/{rec['id']}/download")
     assert dl.status_code == 200
@@ -174,6 +176,73 @@ def test_admin_uploads_delete_and_download(admin_client):
     )
     assert deleted.status_code in (303, 307, 302)
     assert h.get_record(rec["id"]) is None
+
+
+def test_admin_uploads_batch_delete(admin_client):
+    client, h, tmp_path = admin_client
+    recs = []
+    for name in ("batch1.pdf", "batch2.pdf", "keep.pdf"):
+        src = tmp_path / name
+        src.write_bytes(b"%PDF-" + name.encode())
+        rec = h.archive_conversion(
+            tool="pdf2word",
+            original_name=name,
+            input_path=str(src),
+        )
+        assert rec is not None
+        recs.append(rec)
+
+    _login(client)
+    csrf = client.cookies.get("toolkit_csrf")
+    assert csrf
+
+    from urllib.parse import unquote
+
+    # Empty selection
+    empty = client.post(
+        "/admin/uploads/batch-delete",
+        data={"csrf_token": csrf},
+        follow_redirects=False,
+    )
+    assert empty.status_code in (303, 307, 302)
+    assert "no selection" in unquote(empty.headers.get("location", ""))
+
+    deleted = client.post(
+        "/admin/uploads/batch-delete",
+        data={
+            "csrf_token": csrf,
+            "ids": [recs[0]["id"], recs[1]["id"], "missing-id"],
+        },
+        follow_redirects=False,
+    )
+    assert deleted.status_code in (303, 307, 302)
+    loc = deleted.headers.get("location", "")
+    assert "deleted" in loc
+    assert h.get_record(recs[0]["id"]) is None
+    assert h.get_record(recs[1]["id"]) is None
+    assert h.get_record(recs[2]["id"]) is not None
+
+
+def test_storage_delete_records_batch(hist_only):
+    h, tmp_path = hist_only
+    ids = []
+    for name in ("x.pdf", "y.pdf"):
+        src = tmp_path / name
+        src.write_bytes(b"data")
+        rec = h.archive_conversion(
+            tool="pdf2word",
+            original_name=name,
+            input_path=str(src),
+        )
+        assert rec is not None
+        ids.append(rec["id"])
+
+    assert h.delete_records([]) == 0
+    assert h.delete_records(["", "  "]) == 0
+    # Duplicates count once
+    assert h.delete_records([ids[0], ids[0], ids[1], "nope"]) == 2
+    assert h.get_record(ids[0]) is None
+    assert h.get_record(ids[1]) is None
 
 
 def test_admin_uploads_preview(admin_client):

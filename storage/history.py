@@ -498,22 +498,47 @@ def delete_record(record_id: str) -> bool:
     """Delete one history record and its stored input file. Returns True if removed."""
     if not record_id:
         return False
+    return delete_records([record_id]) == 1
+
+
+def delete_records(record_ids: List[str]) -> int:
+    """Delete multiple history records and their files. Returns removed count.
+
+    Unknown or empty ids are skipped. Deduplicates while preserving order.
+    """
+    if not record_ids:
+        return 0
+    seen: set[str] = set()
+    ids: List[str] = []
+    for rid in record_ids:
+        text = str(rid or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        ids.append(text)
+    if not ids:
+        return 0
+
+    removed = 0
     with _lock:
         conn = _get_conn()
         try:
             _migrate_json_if_needed(conn)
-            row = conn.execute(
-                "SELECT * FROM records WHERE id = ?", (record_id,)
-            ).fetchone()
-            if row is None:
-                return False
-            rec = _row_to_dict(row)
-            _remove_record_files(rec)
-            conn.execute("DELETE FROM records WHERE id = ?", (record_id,))
-            conn.commit()
+            for record_id in ids:
+                row = conn.execute(
+                    "SELECT * FROM records WHERE id = ?", (record_id,)
+                ).fetchone()
+                if row is None:
+                    continue
+                rec = _row_to_dict(row)
+                _remove_record_files(rec)
+                conn.execute("DELETE FROM records WHERE id = ?", (record_id,))
+                removed += 1
+            if removed:
+                conn.commit()
         finally:
             conn.close()
-    return True
+    return removed
 
 
 def storage_stats() -> Dict[str, Any]:
