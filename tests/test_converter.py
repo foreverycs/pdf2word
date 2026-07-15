@@ -229,8 +229,12 @@ def test_fidelity_soft_newline_normalized():
 
     pages = extract_document(pdf_path)
     table = next(b for b in pages[0].blocks if isinstance(b, TableBlock))
-    # PDF soft word-wrap \n are replaced with spaces so Word can reflow naturally
-    assert " " in table.cells[0][0].text
+    # Soft word-wrap \n are joined so Word can reflow (no hard breaks left).
+    # ReportLab may not embed CJK glyphs; still require both lines to be present
+    # as a single non-newline string (joined with space or tightly).
+    cell0 = table.cells[0][0].text
+    assert "\n" not in cell0
+    assert cell0.strip()  # non-empty after soft-join
 
     write_document(pages, docx_path)
     from docx import Document
@@ -239,6 +243,7 @@ def test_fidelity_soft_newline_normalized():
     # the cell should not contain hard line breaks
     cell_text = doc_table.cell(0, 0).text
     assert "\n" not in cell_text
+    assert cell_text.strip()
 
 
 def test_fidelity_text_strategy_fallback_border():
@@ -1120,6 +1125,158 @@ def test_plain_prose_not_detected_as_table(tmp_path):
     assert texts, "prose should become text blocks"
     joined = " ".join(t.text for t in texts)
     assert "Title" in joined or "paragraph" in joined
+
+
+def test_soft_wrap_sentence_merged_to_one_paragraph(tmp_path):
+    """PDF visual line wraps of one sentence become a single Word paragraph."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+    from docx import Document
+
+    pdf_path = str(tmp_path / "softwrap.pdf")
+    docx_path = str(tmp_path / "softwrap.docx")
+    c = canvas.Canvas(pdf_path, pagesize=A4)
+    c.setFont("Helvetica", 11)
+    # One English sentence split across visual lines (no terminal punctuation mid-way).
+    y = 780
+    line1 = (
+        "This long sentence continues across multiple visual lines so that "
+        "the converter should join them"
+    )
+    line2 = "into one flowing paragraph without hard line breaks in Word."
+    c.drawString(50, y, line1)
+    c.drawString(50, y - 14, line2)
+    # Real paragraph break (ends with period) then a new sentence.
+    c.drawString(50, y - 40, "A separate short paragraph stays alone.")
+    c.save()
+
+    pages = extract_document(pdf_path)
+    texts = [b for b in pages[0].blocks if isinstance(b, TextBlock)]
+    # Soft-wrapped pair should merge into one block.
+    merged = [t for t in texts if "continues across" in t.text and "flowing paragraph" in t.text]
+    assert merged, f"expected merged sentence, got: {[t.text for t in texts]}"
+    assert "\n" not in merged[0].text
+
+    write_document(pages, docx_path)
+    doc = Document(docx_path)
+    paras = [p.text for p in doc.paragraphs if p.text.strip()]
+    assert any(
+        "continues across" in p and "flowing paragraph" in p and "\n" not in p
+        for p in paras
+    ), paras
+    # Separate paragraph preserved.
+    assert any("separate short paragraph" in p for p in paras)
+
+
+def test_normalize_spacing_cjk_and_mixed():
+    from converter.text_utils import _normalize_spacing, _join_words
+
+    assert _normalize_spacing("你 好 世 界") == "你好世界"
+    assert _normalize_spacing("你好 ， 世界") == "你好，世界"
+    assert _normalize_spacing("第 1 章") == "第1章"
+    assert _normalize_spacing("版本 V2") == "版本V2"
+    # Longer Latin words keep their spaces (readable mixed prose).
+    assert _normalize_spacing("使用 Python 语言") == "使用 Python 语言"
+    assert _normalize_spacing("hello  world") == "hello world"
+    assert _normalize_spacing("这是一段话。 下一句") == "这是一段话。下一句"
+    assert _normalize_spacing("安装 、 调试") == "安装、调试"
+    # Fullwidth / NBSP collapsed then CJK spaces removed.
+    assert " " not in _normalize_spacing("姓名\u3000\u3000张三")
+
+    words = [
+        {"text": "你", "x0": 0, "x1": 12, "top": 0, "bottom": 12},
+        {"text": "好", "x0": 14, "x1": 26, "top": 0, "bottom": 12},
+        {"text": "，", "x0": 27, "x1": 33, "top": 0, "bottom": 12},
+        {"text": "世", "x0": 34, "x1": 46, "top": 0, "bottom": 12},
+        {"text": "界", "x0": 48, "x1": 60, "top": 0, "bottom": 12},
+    ]
+    assert _join_words(words) == "你好，世界"
+
+    words_num = [
+        {"text": "第", "x0": 0, "x1": 12, "top": 0, "bottom": 12},
+        {"text": "1", "x0": 13, "x1": 20, "top": 0, "bottom": 12},
+        {"text": "章", "x0": 21, "x1": 33, "top": 0, "bottom": 12},
+    ]
+    assert _join_words(words_num) == "第1章"
+
+
+def test_soft_wrap_helpers_unit():
+    from converter.text_utils import (
+        _is_soft_wrap_break,
+        _normalize_newlines,
+        _soft_join_text,
+        _merge_soft_wrap_text_blocks,
+    )
+    from converter.models import TextBlock
+
+    assert _soft_join_text("你好", "世界") == "你好世界"
+    assert _soft_join_text("hello", "world") == "hello world"
+    assert _soft_join_text("exam-", "ple") == "example"
+
+    assert _is_soft_wrap_break(
+        "这是一段比较长的中文句子用于测试软换行合并是否生效",
+        "后续内容继续写下去不要硬换行",
+        v_gap=2.0,
+        prev_height=12.0,
+        next_height=12.0,
+        prev_x0=50.0,
+        next_x0=50.0,
+        prev_font=11.0,
+        next_font=11.0,
+    )
+    # Sentence end → real break
+    assert not _is_soft_wrap_break("结束了。", "下一句", v_gap=2.0, prev_height=12, next_height=12)
+    # Short title → real break
+    assert not _is_soft_wrap_break("标题", "这是正文第一行内容", v_gap=2.0, prev_height=12, next_height=12)
+    # List marker → real break
+    assert not _is_soft_wrap_break(
+        "前文内容继续写很长一段以便通过满行判断",
+        "1、安装设备",
+        v_gap=2.0,
+        prev_height=12,
+        next_height=12,
+    )
+
+    assert _normalize_newlines("你好\n世界") == "你好世界"
+    assert _normalize_newlines("结束。\n下一句") == "结束。\n下一句"
+
+    blocks = [
+        TextBlock(
+            text="这是一段比较长的中文句子用于测试软换行合并是否生效",
+            top=10, bottom=22, x0=50, x1=500, font_size=11,
+        ),
+        TextBlock(
+            text="后续内容继续写下去不要硬换行",
+            top=24, bottom=36, x0=50, x1=300, font_size=11,
+        ),
+        TextBlock(
+            text="全新段落在这里开始。",
+            top=60, bottom=72, x0=50, x1=200, font_size=11,
+        ),
+    ]
+    # page_right helps full-width detection for the first wrap line.
+    merged = _merge_soft_wrap_text_blocks(blocks, page_right=510.0)
+    assert len(merged) == 2
+    assert "后续内容" in merged[0].text and "\n" not in merged[0].text
+    assert "全新段落" in merged[1].text
+
+    # Table-cell style: ~1× line-box leading + full width must still merge.
+    from converter.text_utils import _merge_soft_wrap_paragraphs
+    from converter.models import TextRun
+
+    paras = [
+        [TextRun(text="3、公共区域卫生：理化室窗台及靠窗台气瓶柜/干燥箱/酸缸、玻璃、地面、踢", font_size=12)],
+        [TextRun(text="脚线为公共区域，按照分组周一到周五轮流打扫，周六周天所有人共同打扫。", font_size=12)],
+    ]
+    # top/bottom/x0/x1 matching the real PDF (v_gap≈11.4 on 12pt boxes).
+    boxes = [
+        (680.4, 692.4, 90.0, 501.1),
+        (703.8, 715.8, 90.0, 498.0),
+    ]
+    joined = _merge_soft_wrap_paragraphs(paras, line_boxes=boxes, cell_right=506.6)
+    assert len(joined) == 1, joined
+    blob = "".join(r.text for r in joined[0])
+    assert "踢脚线" in blob and "\n" not in blob
 
 
 def test_multi_column_prose_not_detected_as_table(tmp_path):

@@ -7,7 +7,12 @@ from typing import List
 
 from .constants import LINE_GAP, TEXT_COL_GAP
 from .models import TextBlock
-from .text_utils import _join_words, _normalize_spacing, _word_line_sort_key
+from .text_utils import (
+    _join_words,
+    _merge_soft_wrap_text_blocks,
+    _normalize_spacing,
+    _word_line_sort_key,
+)
 from .word_index import WordIndex
 
 def _text_h_align(x0: float, x1: float, page_w: float) -> str:
@@ -116,7 +121,9 @@ def _extract_text_blocks(page, table_bboxes, widx: WordIndex) -> List[TextBlock]
                 font_size=size or None, font_name=fname or None,
                 align=align,
             ))
-    return blocks
+    # PDF auto word-wrap produces one TextBlock per visual line; merge soft
+    # wraps so a single sentence is one Word paragraph (not hard line breaks).
+    return _merge_soft_wrap_text_blocks(blocks, page_right=page_w or None)
 
 
 __all__ = [

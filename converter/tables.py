@@ -21,6 +21,7 @@ from .models import Cell, TableBlock, TextRun
 from .text_blocks import _words_same_visual_line
 from .text_utils import (
     _join_words,
+    _merge_soft_wrap_paragraphs,
     _normalize_newlines,
     _normalize_spacing,
     _word_line_sort_key,
@@ -306,6 +307,7 @@ def _region_paragraphs(
             lines.append([w])
 
     paragraphs: List[List[TextRun]] = []
+    line_boxes: List[Tuple[float, float, float]] = []
     for line in lines:
         ordered = sorted(line, key=_word_line_sort_key)
         runs: List[TextRun] = []
@@ -340,7 +342,18 @@ def _region_paragraphs(
                 ))
         if runs:
             paragraphs.append(runs)
-    return paragraphs
+            line_boxes.append((
+                min(float(w["top"]) for w in line),
+                max(float(w["bottom"]) for w in line),
+                min(float(w["x0"]) for w in line),
+                max(float(w["x1"]) for w in line),
+            ))
+    # Soft word-wrap inside a cell → one Word paragraph (not hard breaks).
+    # Pass cell right edge so full-width wraps (e.g. "…地面、踢" / "脚线为…")
+    # merge even when line leading is ~1× glyph-box height.
+    return _merge_soft_wrap_paragraphs(
+        paragraphs, line_boxes=line_boxes, cell_right=cell_r
+    )
 
 
 def _refine_merges_from_words(

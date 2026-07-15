@@ -14,6 +14,7 @@ from functools import lru_cache
 from typing import List, Optional
 
 from .models import TextBlock
+from .text_utils import _merge_soft_wrap_text_blocks
 
 # Default languages: simplified Chinese + English (common for this toolbox).
 DEFAULT_OCR_LANG = "chi_sim+eng"
@@ -196,7 +197,7 @@ def ocr_image_to_blocks(
                 from_ocr=True,
             )
         )
-    return blocks
+    return _merge_soft_wrap_text_blocks(blocks)
 
 
 def _is_cjk_char(s: str) -> bool:
