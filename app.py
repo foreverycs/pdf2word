@@ -68,6 +68,7 @@ def _page_ctx(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from core.concurrency import shutdown_pools
     from storage.history import _do_cleanup
 
     # Project-root .env for local runs (does not override real process env).
@@ -79,7 +80,11 @@ async def lifespan(app: FastAPI):
         _do_cleanup()
     except Exception:
         pass
-    yield
+    try:
+        yield
+    finally:
+        # Release ProcessPoolExecutor workers if any were started.
+        shutdown_pools(wait=False)
 
 
 app = FastAPI(

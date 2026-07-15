@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import io
 import os
-import shutil
-import tempfile
 from typing import List, Optional, Tuple
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
@@ -13,8 +10,7 @@ from pypdf import PageObject, PdfReader, PdfWriter, Transformation
 from starlette.requests import Request
 
 from core.concurrency import run_conversion
-from core.errors import PDFParseError, ToolkitError, ValidationError
-from storage import archive_conversion
+from core.errors import PDFParseError, ValidationError
 from tools.common import (
     PDF_MEDIA,
     check_upload_size_header,
@@ -22,6 +18,7 @@ from tools.common import (
     save_upload,
     templates,
 )
+from tools.pipeline import TempWorkspace, archive_input, map_conversion_error
 
 router = APIRouter(prefix="/tools/pdf-merge", tags=["pdf-merge"])
 
@@ -239,9 +236,10 @@ async def convert(
 
     use_divider = str(divider or "").strip().lower() in ("1", "true", "yes", "on")
 
-    tmp_dir = tempfile.mkdtemp(prefix="pdf_merge_")
-    pdf1_path = os.path.join(tmp_dir, "input1.pdf")
-    out_path = os.path.join(tmp_dir, "merged.pdf")
+    ws = TempWorkspace("pdf_merge_")
+    ws.create()
+    pdf1_path = ws.join("input1.pdf")
+    out_path = ws.join("merged.pdf")
 
     try:
         await save_upload(file, pdf1_path)
@@ -249,36 +247,23 @@ async def convert(
         pdf2_path: Optional[str] = None
         if file2 and file2.filename:
             if not file2.filename.lower().endswith(".pdf"):
-                shutil.rmtree(tmp_dir, ignore_errors=True)
                 raise HTTPException(
                     status_code=400, detail="Second file must be a PDF"
                 )
             check_upload_size_header(file2, label="Second file")
-            pdf2_path = os.path.join(tmp_dir, "input2.pdf")
+            pdf2_path = ws.join("input2.pdf")
             await save_upload(file2, pdf2_path)
 
         stats = await run_conversion(
             merge_invoices, pdf1_path, out_path, pdf2_path, use_divider
         )
         archive_name = file.filename
-    except HTTPException:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise
-    except ToolkitError as exc:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
-    except ValueError as exc:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise HTTPException(
-            status_code=500, detail=f"Merge failed: {exc}"
-        ) from exc
+        ws.cleanup_now()
+        raise map_conversion_error(exc, label="Merge failed") from exc
 
     out_name = safe_stem(file.filename) + "_merged.pdf"
-    await asyncio.to_thread(
-        archive_conversion,
+    await archive_input(
         tool="pdf-merge",
         original_name=archive_name or "input.pdf",
         input_path=pdf1_path,
@@ -287,7 +272,7 @@ async def convert(
             "output_pages": stats.get("output_pages"),
         },
     )
-    background_tasks.add_task(shutil.rmtree, tmp_dir, ignore_errors=True)
+    ws.schedule_cleanup(background_tasks)
     # inline so the browser can embed / print instead of forcing a download
     return FileResponse(
         out_path,

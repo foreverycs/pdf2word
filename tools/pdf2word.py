@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import shutil
-import tempfile
 import zipfile
 from typing import List, Optional, Tuple
 from urllib.parse import quote
@@ -13,9 +11,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.requests import Request
 
 from converter import content_warnings, count_blocks, extract_document, ocr_info, write_document
-from core.concurrency import run_conversion, run_conversion_process, should_use_process_pool
-from core.errors import ConversionError, PDFParseError, ToolkitError
-from storage import archive_conversion
+from core.concurrency import run_heavy
+from core.errors import ConversionError, PDFParseError
 from tools.common import (
     DOCX_MEDIA,
     ZIP_MEDIA,
@@ -25,6 +22,7 @@ from tools.common import (
     save_upload,
     templates,
 )
+from tools.pipeline import TempWorkspace, archive_input, map_conversion_error
 
 router = APIRouter(prefix="/tools/pdf2word", tags=["pdf2word"])
 
@@ -95,6 +93,21 @@ def _parse_ocr_flag(ocr: Optional[str]) -> bool:
     return str(ocr).strip().lower() in ("1", "true", "yes", "on")
 
 
+def _require_ocr_if_requested(use_ocr: bool) -> None:
+    if not use_ocr:
+        return
+    from converter import ocr_available
+
+    if not ocr_available():
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "OCR requested but Tesseract is not available. "
+                "Install Tesseract and pytesseract, or set TESSERACT_CMD."
+            ),
+        )
+
+
 @router.post("/convert")
 async def convert(
     background_tasks: BackgroundTasks,
@@ -108,50 +121,33 @@ async def convert(
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
     check_upload_size_header(file)
-
     use_ocr = _parse_ocr_flag(ocr)
-    if use_ocr:
-        from converter import ocr_available
+    _require_ocr_if_requested(use_ocr)
 
-        if not ocr_available():
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    "OCR requested but Tesseract is not available. "
-                    "Install Tesseract and pytesseract, or set TESSERACT_CMD."
-                ),
-            )
-
-    tmp_dir = tempfile.mkdtemp(prefix="pdf2word_")
-    pdf_path = os.path.join(tmp_dir, "input.pdf")
-    docx_path = os.path.join(tmp_dir, "output.docx")
+    ws = TempWorkspace("pdf2word_")
+    ws.create()
+    pdf_path = ws.join("input.pdf")
+    docx_path = ws.join("output.docx")
     range_spec = (page_range or "").strip() or None
 
     try:
         await save_upload(file, pdf_path)
         file_size = os.path.getsize(pdf_path)
-        runner = run_conversion_process if should_use_process_pool(file_size) else run_conversion
-        stats = await runner(
-            _convert_one, pdf_path, docx_path, range_spec, page_breaks, use_ocr
+        stats = await run_heavy(
+            _convert_one,
+            pdf_path,
+            docx_path,
+            range_spec,
+            page_breaks,
+            use_ocr,
+            file_size=file_size,
         )
-    except HTTPException:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise
-    except ToolkitError as exc:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
-    except ValueError as exc:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise HTTPException(
-            status_code=500, detail=f"Conversion failed: {exc}"
-        ) from exc
+        ws.cleanup_now()
+        raise map_conversion_error(exc) from exc
 
     out_name = safe_stem(file.filename) + ".docx"
-    await asyncio.to_thread(
-        archive_conversion,
+    await archive_input(
         tool="pdf2word",
         original_name=file.filename or "input.pdf",
         input_path=pdf_path,
@@ -161,7 +157,7 @@ async def convert(
             "images": stats.get("images"),
         },
     )
-    background_tasks.add_task(shutil.rmtree, tmp_dir, ignore_errors=True)
+    ws.schedule_cleanup(background_tasks)
     return FileResponse(
         docx_path,
         media_type=DOCX_MEDIA,
@@ -181,7 +177,7 @@ async def convert_batch(
     """Convert multiple PDFs; returns a ZIP of .docx files.
 
     Uploads are sequential; conversions run concurrently up to
-    ``CONVERT_CONCURRENCY`` (via ``run_conversion``).
+    ``CONVERT_CONCURRENCY`` (via ``run_heavy`` / process pool when large).
     """
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
@@ -193,21 +189,12 @@ async def convert_batch(
         )
 
     use_ocr = _parse_ocr_flag(ocr)
-    if use_ocr:
-        from converter import ocr_available
-
-        if not ocr_available():
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    "OCR requested but Tesseract is not available. "
-                    "Install Tesseract and pytesseract, or set TESSERACT_CMD."
-                ),
-            )
+    _require_ocr_if_requested(use_ocr)
 
     range_spec = (page_range or "").strip() or None
-    tmp_dir = tempfile.mkdtemp(prefix="pdf2word_batch_")
-    zip_path = os.path.join(tmp_dir, "output.zip")
+    ws = TempWorkspace("pdf2word_batch_")
+    ws.create()
+    zip_path = ws.join("output.zip")
 
     # (idx, original_name, pdf_path, docx_path)
     jobs: List[Tuple[int, str, str, str]] = []
@@ -221,8 +208,8 @@ async def convert_batch(
                 )
             check_upload_size_header(file)
 
-            pdf_path = os.path.join(tmp_dir, f"in_{idx}.pdf")
-            docx_path = os.path.join(tmp_dir, f"out_{idx}.docx")
+            pdf_path = ws.join(f"in_{idx}.pdf")
+            docx_path = ws.join(f"out_{idx}.docx")
             await save_upload(file, pdf_path)
             jobs.append((idx, file.filename or f"input_{idx}.pdf", pdf_path, docx_path))
 
@@ -231,20 +218,17 @@ async def convert_batch(
         ) -> Tuple[int, str, str, str, dict]:
             try:
                 file_size = os.path.getsize(pdf_path)
-                runner = run_conversion_process if should_use_process_pool(file_size) else run_conversion
-                stats = await runner(
+                stats = await run_heavy(
                     _convert_one,
                     pdf_path,
                     docx_path,
                     range_spec,
                     page_breaks,
                     use_ocr,
+                    file_size=file_size,
                 )
-            except ValueError as exc:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"{name}: {exc}",
-                ) from exc
+            except Exception as exc:
+                raise map_conversion_error(exc, name_prefix=name) from exc
             return idx, name, pdf_path, docx_path, stats
 
         results = await asyncio.gather(
@@ -267,8 +251,7 @@ async def convert_batch(
                 used_names.add(out_name)
                 zf.write(docx_path, out_name)
 
-                await asyncio.to_thread(
-                    archive_conversion,
+                await archive_input(
                     tool="pdf2word",
                     original_name=name,
                     input_path=pdf_path,
@@ -291,16 +274,13 @@ async def convert_batch(
                         os.remove(p)
                     except OSError:
                         pass
-    except HTTPException:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise
     except Exception as exc:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise HTTPException(
-            status_code=500, detail=f"Batch conversion failed: {exc}"
+        ws.cleanup_now()
+        raise map_conversion_error(
+            exc, label="Batch conversion failed"
         ) from exc
 
-    background_tasks.add_task(shutil.rmtree, tmp_dir, ignore_errors=True)
+    ws.schedule_cleanup(background_tasks)
     headers = _stats_headers({
         "pages": total_pages,
         "tables": total_tables,

@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import shutil
-import tempfile
 import zipfile
 from typing import List, Optional, Tuple
 
@@ -12,7 +10,6 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.requests import Request
 
 from core.concurrency import run_conversion
-from storage import archive_conversion
 from tools.common import (
     PDF_MEDIA,
     ZIP_MEDIA,
@@ -22,7 +19,8 @@ from tools.common import (
     save_upload,
     templates,
 )
-from word2pdf import ConversionError, convert_to_pdf, engine_info
+from tools.pipeline import TempWorkspace, archive_input, map_conversion_error
+from word2pdf import convert_to_pdf, engine_info
 
 router = APIRouter(prefix="/tools/word2pdf", tags=["word2pdf"])
 
@@ -91,35 +89,27 @@ async def convert(
     check_upload_size_header(file)
     _require_engine()
 
-    tmp_dir = tempfile.mkdtemp(prefix="word2pdf_")
+    ws = TempWorkspace("word2pdf_")
+    ws.create()
     ext = os.path.splitext(file.filename or "input.docx")[1].lower() or ".docx"
-    doc_path = os.path.join(tmp_dir, f"input{ext}")
-    pdf_path = os.path.join(tmp_dir, "output.pdf")
+    doc_path = ws.join(f"input{ext}")
+    pdf_path = ws.join("output.pdf")
 
     try:
         await save_upload(file, doc_path)
         stats = await run_conversion(_convert_one, doc_path, pdf_path)
-    except HTTPException:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise
-    except ConversionError as exc:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise HTTPException(
-            status_code=500, detail=f"Conversion failed: {exc}"
-        ) from exc
+        ws.cleanup_now()
+        raise map_conversion_error(exc) from exc
 
     out_name = safe_stem(file.filename) + ".pdf"
-    await asyncio.to_thread(
-        archive_conversion,
+    await archive_input(
         tool="word2pdf",
         original_name=file.filename or "input.docx",
         input_path=doc_path,
         extra={"engine": stats.get("engine"), "bytes": stats.get("bytes")},
     )
-    background_tasks.add_task(shutil.rmtree, tmp_dir, ignore_errors=True)
+    ws.schedule_cleanup(background_tasks)
     return FileResponse(
         pdf_path,
         media_type=PDF_MEDIA,
@@ -149,8 +139,9 @@ async def convert_batch(
 
     _require_engine()
 
-    tmp_dir = tempfile.mkdtemp(prefix="word2pdf_batch_")
-    zip_path = os.path.join(tmp_dir, "output.zip")
+    ws = TempWorkspace("word2pdf_batch_")
+    ws.create()
+    zip_path = ws.join("output.zip")
     jobs: List[Tuple[int, str, str, str]] = []
 
     try:
@@ -163,8 +154,8 @@ async def convert_batch(
             check_upload_size_header(file)
 
             ext = os.path.splitext(file.filename or "input.docx")[1].lower() or ".docx"
-            doc_path = os.path.join(tmp_dir, f"in_{idx}{ext}")
-            pdf_path = os.path.join(tmp_dir, f"out_{idx}.pdf")
+            doc_path = ws.join(f"in_{idx}{ext}")
+            pdf_path = ws.join(f"out_{idx}.pdf")
             await save_upload(file, doc_path)
             jobs.append(
                 (idx, file.filename or f"input_{idx}.docx", doc_path, pdf_path)
@@ -175,11 +166,8 @@ async def convert_batch(
         ) -> Tuple[int, str, str, str, dict]:
             try:
                 stats = await run_conversion(_convert_one, doc_path, pdf_path)
-            except ConversionError as exc:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"{name}: {exc}",
-                ) from exc
+            except Exception as exc:
+                raise map_conversion_error(exc, name_prefix=name) from exc
             return idx, name, doc_path, pdf_path, stats
 
         results = await asyncio.gather(
@@ -201,8 +189,7 @@ async def convert_batch(
                 used_names.add(out_name)
                 zf.write(pdf_path, out_name)
 
-                await asyncio.to_thread(
-                    archive_conversion,
+                await archive_input(
                     tool="word2pdf",
                     original_name=name,
                     input_path=doc_path,
@@ -221,16 +208,13 @@ async def convert_batch(
                         os.remove(p)
                     except OSError:
                         pass
-    except HTTPException:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise
     except Exception as exc:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise HTTPException(
-            status_code=500, detail=f"Batch conversion failed: {exc}"
+        ws.cleanup_now()
+        raise map_conversion_error(
+            exc, label="Batch conversion failed"
         ) from exc
 
-    background_tasks.add_task(shutil.rmtree, tmp_dir, ignore_errors=True)
+    ws.schedule_cleanup(background_tasks)
     headers = {
         "X-Files": str(converted),
         "X-Bytes": str(total_bytes),

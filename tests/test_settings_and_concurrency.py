@@ -111,3 +111,73 @@ async def test_run_conversion_runs_callable(monkeypatch):
         return a + b
 
     assert await concurrency_mod.run_conversion(add, 2, 3) == 5
+
+
+def test_process_worker_entry_is_picklable():
+    """ProcessPoolExecutor requires a top-level callable (no lambdas)."""
+    import pickle
+
+    # Round-trip the worker entry + its call signature (spawn-safe).
+    payload = pickle.dumps(
+        (concurrency_mod._call_in_process, pow, (2, 10), {})
+    )
+    fn, target, args, kwargs = pickle.loads(payload)
+    assert fn(target, args, kwargs) == 1024
+    # Lambdas are not picklable — that was the old bug class.
+    with pytest.raises(Exception):
+        pickle.dumps(lambda: 1)
+
+
+@pytest.mark.asyncio
+async def test_run_conversion_process_picklable(monkeypatch):
+    monkeypatch.setenv("ALLOW_INSECURE_ADMIN", "1")
+    monkeypatch.setenv("CONVERT_CONCURRENCY", "1")
+    settings_mod.clear_settings_cache()
+    concurrency_mod.reset_semaphore()
+    try:
+        # Builtins pickle cleanly across spawn/fork.
+        assert await concurrency_mod.run_conversion_process(pow, 2, 8) == 256
+    finally:
+        concurrency_mod.shutdown_pools(wait=False)
+
+
+def test_should_use_process_pool_threshold(monkeypatch):
+    monkeypatch.setenv("PDF_PROCESS_POOL_THRESHOLD", "100")
+    # Re-read threshold is fixed at import; use the module constant check via API.
+    assert concurrency_mod.should_use_process_pool(0) is False
+    assert concurrency_mod.should_use_process_pool(
+        concurrency_mod._PROCESS_POOL_THRESHOLD
+    ) is True
+
+
+@pytest.mark.asyncio
+async def test_run_heavy_chooses_thread_for_small(monkeypatch):
+    monkeypatch.setenv("ALLOW_INSECURE_ADMIN", "1")
+    monkeypatch.setenv("CONVERT_CONCURRENCY", "1")
+    settings_mod.clear_settings_cache()
+    concurrency_mod.reset_semaphore()
+
+    calls = []
+
+    async def fake_thread(func, /, *args, **kwargs):
+        calls.append("thread")
+        return func(*args, **kwargs)
+
+    async def fake_proc(func, /, *args, **kwargs):
+        calls.append("proc")
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(concurrency_mod, "run_conversion", fake_thread)
+    monkeypatch.setattr(concurrency_mod, "run_conversion_process", fake_proc)
+
+    def add(a, b):
+        return a + b
+
+    assert await concurrency_mod.run_heavy(add, 1, 2, file_size=1) == 3
+    assert calls == ["thread"]
+
+    calls.clear()
+    assert await concurrency_mod.run_heavy(
+        add, 1, 2, file_size=concurrency_mod._PROCESS_POOL_THRESHOLD
+    ) == 3
+    assert calls == ["proc"]

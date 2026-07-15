@@ -13,7 +13,7 @@ import asyncio
 import os
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Optional
+from typing import Any, AsyncIterator, Callable, Optional, Tuple
 
 from .settings import get_settings
 
@@ -56,6 +56,15 @@ def reset_semaphore() -> None:
         _proc_pool_size = 0
 
 
+def shutdown_pools(*, wait: bool = False) -> None:
+    """Release process-pool workers (call from app lifespan teardown)."""
+    global _proc_pool, _proc_pool_size
+    if _proc_pool is not None:
+        _proc_pool.shutdown(wait=wait)
+        _proc_pool = None
+        _proc_pool_size = 0
+
+
 @asynccontextmanager
 async def conversion_slot() -> AsyncIterator[None]:
     """Acquire a global conversion slot; wait if the pool is full.
@@ -77,23 +86,57 @@ async def run_conversion(func, /, *args, **kwargs):
         return await asyncio.to_thread(func, *args, **kwargs)
 
 
+def _call_in_process(
+    func: Callable[..., Any],
+    args: Tuple[Any, ...],
+    kwargs: dict,
+) -> Any:
+    """Top-level picklable entry for ProcessPoolExecutor (no lambdas)."""
+    return func(*args, **kwargs)
+
+
 async def run_conversion_process(func, /, *args, **kwargs):
     """Run ``func`` in a worker process while holding a conversion slot.
 
     Use for CPU-bound work (PDF parsing, image processing) where the GIL
     limits thread-based parallelism. The function and its arguments must
-    be picklable (no lambdas, no open file handles).
+    be picklable (module-level callable; no lambdas, no open file handles).
     """
     pool = _get_proc_pool()
     async with conversion_slot():
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(pool, lambda: func(*args, **kwargs))
+        return await loop.run_in_executor(
+            pool, _call_in_process, func, args, kwargs
+        )
 
 
 # Threshold in bytes: files larger than this use process pool for PDF conversion.
-_PROCESS_POOL_THRESHOLD = int(os.environ.get("PDF_PROCESS_POOL_THRESHOLD", str(2 * 1024 * 1024)))
+_PROCESS_POOL_THRESHOLD = int(
+    os.environ.get("PDF_PROCESS_POOL_THRESHOLD", str(2 * 1024 * 1024))
+)
 
 
 def should_use_process_pool(file_size: int) -> bool:
     """True when the file is large enough to benefit from process-based parallelism."""
     return file_size >= _PROCESS_POOL_THRESHOLD
+
+
+async def run_heavy(
+    func,
+    /,
+    *args,
+    file_size: Optional[int] = None,
+    force_process: bool = False,
+    **kwargs,
+):
+    """Run ``func`` under the conversion slot; use process pool when appropriate.
+
+    Process pool is selected when ``force_process`` is true or ``file_size``
+    meets :func:`should_use_process_pool`. Otherwise uses a worker thread.
+    """
+    use_proc = force_process or (
+        file_size is not None and should_use_process_pool(file_size)
+    )
+    if use_proc:
+        return await run_conversion_process(func, *args, **kwargs)
+    return await run_conversion(func, *args, **kwargs)
