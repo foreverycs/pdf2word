@@ -267,6 +267,61 @@ def test_admin_uploads_preview(admin_client):
     assert client.get("/admin/uploads/nonexistent/preview").status_code == 404
 
 
+def test_admin_uploads_word_preview_html(admin_client):
+    """Word .docx preview is HTML (no LibreOffice conversion)."""
+    from docx import Document
+
+    client, h, tmp_path = admin_client
+    src = tmp_path / "note.docx"
+    doc = Document()
+    doc.add_heading("预览标题", level=1)
+    doc.add_paragraph("Hello Word preview")
+    table = doc.add_table(rows=1, cols=2)
+    table.rows[0].cells[0].text = "A"
+    table.rows[0].cells[1].text = "B"
+    doc.save(str(src))
+
+    rec = h.archive_conversion(
+        tool="word2pdf",
+        original_name="note.docx",
+        input_path=str(src),
+    )
+    assert rec is not None
+
+    _login(client)
+    pv = client.get(f"/admin/uploads/{rec['id']}/preview")
+    assert pv.status_code == 200
+    ctype = (pv.headers.get("content-type") or "").lower()
+    assert "text/html" in ctype
+    assert pv.headers.get("x-preview-source") == "docx-html"
+    assert "inline" in pv.headers.get("content-disposition", "")
+    body = pv.text
+    assert "预览标题" in body
+    assert "Hello Word preview" in body
+    assert "<table>" in body
+    assert ">A<" in body
+
+
+def test_admin_uploads_doc_preview_unsupported(admin_client):
+    """Legacy .doc cannot be previewed without conversion engines."""
+    client, h, tmp_path = admin_client
+    src = tmp_path / "legacy.doc"
+    src.write_bytes(b"\xd0\xcf\x11\xe0 fake ole doc")
+    rec = h.archive_conversion(
+        tool="word2pdf",
+        original_name="legacy.doc",
+        input_path=str(src),
+    )
+    assert rec is not None
+
+    _login(client)
+    pv = client.get(f"/admin/uploads/{rec['id']}/preview")
+    assert pv.status_code == 415
+    assert "docx" in (pv.json().get("detail") or "").lower() or "doc" in (
+        pv.json().get("detail") or ""
+    ).lower()
+
+
 def test_admin_api_stats_unauthorized(admin_client):
     client, _, _ = admin_client
     r = client.get("/admin/api/stats")

@@ -143,8 +143,9 @@
   const titleEl = document.getElementById('previewTitle');
   const bodyEl = document.getElementById('previewBody');
 
-  const PREVIEW_EXTS = new Set(['pdf','png','jpg','jpeg','gif','webp','bmp','svg','txt','csv','json','html','htm']);
+  const PREVIEW_EXTS = new Set(['pdf','png','jpg','jpeg','gif','webp','bmp','svg','txt','csv','json','html','htm','docx','doc']);
   const IMAGE_EXTS = new Set(['png','jpg','jpeg','gif','webp','bmp','svg']);
+  const WORD_EXTS = new Set(['docx','doc']);
 
   document.addEventListener('click', function(e) {
     var btn = e.target.closest('.preview-btn');
@@ -153,6 +154,22 @@
     var name = btn.getAttribute('data-name');
     openPreview(id, name);
   });
+
+  function showPreviewError(msg) {
+    bodyEl.innerHTML = '';
+    var el = document.createElement('div');
+    el.className = 'preview-error';
+    el.textContent = msg || '预览失败';
+    bodyEl.appendChild(el);
+  }
+
+  function showPreviewLoading(msg) {
+    bodyEl.innerHTML = '';
+    var el = document.createElement('div');
+    el.className = 'preview-loading';
+    el.textContent = msg || '正在加载预览…';
+    bodyEl.appendChild(el);
+  }
 
   function openPreview(id, name) {
     var ext = (name.split('.').pop() || '').toLowerCase();
@@ -163,20 +180,65 @@
     titleEl.textContent = name;
     bodyEl.innerHTML = '';
     var url = (window.__ROOT__||'')+'/admin/uploads/' + encodeURIComponent(id) + '/preview';
+    overlay.classList.add('show');
+    document.body.style.overflow = 'hidden';
+
     if (IMAGE_EXTS.has(ext)) {
       var img = document.createElement('img');
       img.className = 'preview-img';
       img.src = url;
       img.alt = name;
       bodyEl.appendChild(img);
-    } else {
-      var iframe = document.createElement('iframe');
-      iframe.className = 'preview-iframe';
-      iframe.src = url;
-      bodyEl.appendChild(iframe);
+      return;
     }
-    overlay.classList.add('show');
-    document.body.style.overflow = 'hidden';
+
+    // Word: backend returns HTML (or JSON error for unsupported .doc).
+    if (WORD_EXTS.has(ext)) {
+      showPreviewLoading('正在加载 Word 预览…');
+      fetch(url, { credentials: 'same-origin' })
+        .then(function(r) {
+          var ctype = (r.headers.get('content-type') || '').toLowerCase();
+          if (!r.ok) {
+            if (ctype.indexOf('application/json') !== -1) {
+              return r.json().then(function(j) {
+                throw new Error((j && j.detail) ? j.detail : ('预览失败 (' + r.status + ')'));
+              });
+            }
+            return r.text().then(function(t) {
+              throw new Error(t || ('预览失败 (' + r.status + ')'));
+            });
+          }
+          return r.text();
+        })
+        .then(function(htmlDoc) {
+          if (!overlay.classList.contains('show')) return;
+          bodyEl.innerHTML = '';
+          var iframe = document.createElement('iframe');
+          iframe.className = 'preview-iframe';
+          iframe.title = name;
+          iframe.setAttribute('sandbox', 'allow-same-origin');
+          bodyEl.appendChild(iframe);
+          var doc = iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document);
+          if (doc) {
+            doc.open();
+            doc.write(htmlDoc);
+            doc.close();
+          } else {
+            iframe.srcdoc = htmlDoc;
+          }
+        })
+        .catch(function(err) {
+          if (!overlay.classList.contains('show')) return;
+          showPreviewError(err && err.message ? err.message : '预览失败');
+        });
+      return;
+    }
+
+    var iframe = document.createElement('iframe');
+    iframe.className = 'preview-iframe';
+    iframe.src = url;
+    iframe.title = name;
+    bodyEl.appendChild(iframe);
   }
 
   function closePreview(e) {

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import html
 import os
 import time
+from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
 
@@ -347,6 +349,237 @@ _PREVIEW_MIME = {
     ".htm": "text/html",
 }
 
+# Inline Word preview without LibreOffice / MS Word conversion.
+# .docx → HTML via python-docx; legacy .doc is not supported this way.
+_WORD_PREVIEW_EXTS = {".docx", ".doc"}
+_DOCX_PREVIEW_MAX_PARAS = 4000
+_DOCX_PREVIEW_MAX_TABLES = 200
+
+
+def _docx_run_html(run) -> str:
+    """Escape a python-docx run and wrap basic emphasis."""
+    text = html.escape(run.text or "")
+    if not text:
+        return ""
+    if getattr(run, "bold", None):
+        text = f"<strong>{text}</strong>"
+    if getattr(run, "italic", None):
+        text = f"<em>{text}</em>"
+    if getattr(run, "underline", None):
+        text = f"<u>{text}</u>"
+    return text
+
+
+def _docx_paragraph_html(paragraph) -> str:
+    style_name = ""
+    try:
+        style_name = (paragraph.style.name or "").lower() if paragraph.style else ""
+    except Exception:
+        style_name = ""
+
+    parts = [_docx_run_html(run) for run in paragraph.runs]
+    inner = "".join(parts).strip()
+    # python-docx sometimes leaves empty runs when text is only on the paragraph
+    if not inner:
+        inner = html.escape(paragraph.text or "").strip()
+    if not inner:
+        return "<p class='empty'>&nbsp;</p>"
+
+    align = ""
+    try:
+        raw = paragraph.alignment
+        if raw is not None:
+            # WD_ALIGN_PARAGRAPH: 0 left, 1 center, 2 right, 3 justify
+            mapping = {1: "center", 2: "right", 3: "justify"}
+            if int(raw) in mapping:
+                align = f' style="text-align:{mapping[int(raw)]}"'
+    except Exception:
+        align = ""
+
+    if style_name.startswith("heading 1") or style_name == "title":
+        return f"<h1{align}>{inner}</h1>"
+    if style_name.startswith("heading 2"):
+        return f"<h2{align}>{inner}</h2>"
+    if style_name.startswith("heading 3"):
+        return f"<h3{align}>{inner}</h3>"
+    if style_name.startswith("heading"):
+        return f"<h4{align}>{inner}</h4>"
+    if "list" in style_name:
+        return f"<li{align}>{inner}</li>"
+    return f"<p{align}>{inner}</p>"
+
+
+def _docx_table_html(table) -> str:
+    rows_html: list[str] = []
+    for row in table.rows:
+        cells: list[str] = []
+        for cell in row.cells:
+            cell_text = html.escape((cell.text or "").strip()) or "&nbsp;"
+            cells.append(f"<td>{cell_text}</td>")
+        rows_html.append("<tr>" + "".join(cells) + "</tr>")
+    return "<table>" + "".join(rows_html) + "</table>"
+
+
+def _docx_to_preview_html(path: Path, *, title: str = "") -> str:
+    """Render a .docx file to a self-contained HTML preview page.
+
+    Uses python-docx only (no LibreOffice / MS Word). Layout fidelity is
+    approximate: paragraphs, headings, basic emphasis, and tables.
+    """
+    from docx import Document
+    from docx.oxml.ns import qn
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+
+    doc = Document(str(path))
+    body_parts: list[str] = []
+    para_count = 0
+    table_count = 0
+    truncated = False
+
+    # Walk body in document order so tables sit between surrounding paragraphs.
+    body = doc.element.body
+    for child in body.iterchildren():
+        tag = child.tag
+        if tag == qn("w:p"):
+            if para_count >= _DOCX_PREVIEW_MAX_PARAS:
+                truncated = True
+                break
+            body_parts.append(_docx_paragraph_html(Paragraph(child, doc)))
+            para_count += 1
+        elif tag == qn("w:tbl"):
+            if table_count >= _DOCX_PREVIEW_MAX_TABLES:
+                truncated = True
+                break
+            body_parts.append(_docx_table_html(Table(child, doc)))
+            table_count += 1
+
+    if truncated:
+        body_parts.append(
+            "<p class='note'>文档较长，预览已截断（仅展示前若干段落/表格）。</p>"
+        )
+
+    # Collapse consecutive list items into <ul>
+    merged: list[str] = []
+    list_buf: list[str] = []
+    for part in body_parts:
+        if part.startswith("<li"):
+            list_buf.append(part)
+        else:
+            if list_buf:
+                merged.append("<ul>" + "".join(list_buf) + "</ul>")
+                list_buf = []
+            merged.append(part)
+    if list_buf:
+        merged.append("<ul>" + "".join(list_buf) + "</ul>")
+
+    safe_title = html.escape(title or path.name)
+    content = "\n".join(merged) if merged else "<p class='note'>（文档无可见文本内容）</p>"
+    return f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>{safe_title}</title>
+<style>
+  :root {{ color-scheme: light; }}
+  * {{ box-sizing: border-box; }}
+  body {{
+    margin: 0;
+    padding: 28px 20px 48px;
+    font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    font-size: 15px;
+    line-height: 1.65;
+    color: #1e293b;
+    background: #eef1f8;
+  }}
+  .sheet {{
+    max-width: 820px;
+    margin: 0 auto;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 8px 28px rgba(15, 23, 42, 0.08);
+    padding: 40px 48px;
+    min-height: 60vh;
+  }}
+  h1, h2, h3, h4 {{
+    color: #0f172a;
+    line-height: 1.3;
+    margin: 1.2em 0 0.5em;
+  }}
+  h1 {{ font-size: 1.55rem; }}
+  h2 {{ font-size: 1.3rem; }}
+  h3 {{ font-size: 1.12rem; }}
+  h4 {{ font-size: 1.02rem; }}
+  p {{ margin: 0.55em 0; white-space: pre-wrap; word-break: break-word; }}
+  p.empty {{ margin: 0.35em 0; }}
+  ul {{ margin: 0.5em 0 0.5em 1.2em; padding: 0; }}
+  li {{ margin: 0.25em 0; }}
+  table {{
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1em 0;
+    font-size: 13.5px;
+  }}
+  td {{
+    border: 1px solid #cbd5e1;
+    padding: 8px 10px;
+    vertical-align: top;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }}
+  .note {{
+    color: #64748b;
+    font-size: 13px;
+    text-align: center;
+    margin-top: 1.5em;
+  }}
+  @media (max-width: 640px) {{
+    body {{ padding: 12px; }}
+    .sheet {{ padding: 22px 18px; border-radius: 10px; }}
+  }}
+</style>
+</head>
+<body>
+  <article class="sheet">
+    {content}
+  </article>
+</body>
+</html>
+"""
+
+
+def _word_preview_response(path: Path, *, original_name: str) -> HTMLResponse:
+    """Build an HTML preview response for Word uploads (no PDF conversion)."""
+    ext = path.suffix.lower()
+    if ext == ".doc":
+        raise HTTPException(
+            status_code=415,
+            detail=(
+                "旧版 .doc 无法在不转换的情况下预览。"
+                "请使用 .docx，或下载后用 Word 打开。"
+            ),
+        )
+    if ext != ".docx":
+        raise HTTPException(status_code=415, detail="Unsupported Word format")
+    try:
+        html_doc = _docx_to_preview_html(path, title=original_name or path.name)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"无法解析 Word 文档: {exc}",
+        ) from exc
+    safe_name = (original_name or path.name).replace('"', "")
+    return HTMLResponse(
+        content=html_doc,
+        headers={
+            "Content-Disposition": f'inline; filename="{safe_name}.html"',
+            "X-Preview-Source": "docx-html",
+            "Cache-Control": "private, max-age=120",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
 
 @router.get("/uploads/{record_id}/preview")
 async def uploads_preview(request: Request, record_id: str):
@@ -363,6 +596,13 @@ async def uploads_preview(request: Request, record_id: str):
     if path is None:
         raise HTTPException(status_code=404, detail="File missing")
     ext = path.suffix.lower()
+
+    # Word: render as HTML (no LibreOffice / MS Word conversion).
+    if ext in _WORD_PREVIEW_EXTS:
+        return _word_preview_response(
+            path, original_name=str(rec.get("original_name") or path.name)
+        )
+
     media_type = _PREVIEW_MIME.get(ext, "application/octet-stream")
     return FileResponse(
         path,

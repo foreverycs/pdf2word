@@ -1001,6 +1001,21 @@
   height: 100%;
   object-fit: contain;
 }
+.preview-loading,
+.preview-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 24px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-2, #475569);
+}
+.preview-error {
+  color: #b91c1c;
+}
 
 /* ========================================
    Utility
