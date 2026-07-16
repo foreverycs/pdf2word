@@ -6,9 +6,14 @@ from .base64_codec import (
     encode_base64,
     probe_base64,
 )
-from .json_format import (
+from .code_format import (
+    FormatError,
     JsonError,
+    format_code,
     format_json,
+    list_languages,
+    sample_for,
+    validate_code,
     validate_json,
 )
 from .markdown_render import (
@@ -22,8 +27,13 @@ __all__ = [
     "decode_base64",
     "probe_base64",
     "DecodeError",
+    "format_code",
     "format_json",
+    "validate_code",
     "validate_json",
+    "list_languages",
+    "sample_for",
+    "FormatError",
     "JsonError",
     "render_markdown",
     "sample_markdown",

@@ -103,14 +103,14 @@ TOOL_REGISTRY: List[Dict[str, Any]] = [
         "accent": "amber",
     },
     {
-        "name": "JSON 格式化",
+        "name": "代码格式化",
         "slug": "json",
         "category": "coding",
-        "description": "JSON 美化缩进、压缩最小化、键排序与语法校验，默认保留中文。",
+        "description": "多语言代码美化 / 压缩（JSON、JS/TS、Python、HTML/CSS/XML、SQL、YAML 等），选项卡切换。",
         "icon": "{ }",
         "route": "/tools/json",
-        "badge": "Pretty · Minify",
-        "features": ["美化 / 压缩", "键排序", "中文不转义", "错误定位"],
+        "badge": "Multi-lang",
+        "features": ["多语言选项卡", "美化 / 压缩", "JSON 键排序", "错误定位"],
         "cta": "打开工具",
         "accent": "amber",
     },
@@ -303,9 +303,12 @@ def get_tool_by_slug(slug: str) -> Dict[str, Any] | None:
     return None
 
 
+TOOLS = TOOL_REGISTRY  # alias
+
 __all__ = [
     "TOOL_CATEGORIES",
     "TOOL_REGISTRY",
+    "TOOLS",
     "TOOL_ROUTERS",
     "is_featured_tool",
     "enabled_tools",

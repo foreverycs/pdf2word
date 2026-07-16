@@ -39,7 +39,7 @@
 | 工具 | 路径 | 说明 |
 |------|------|------|
 | **Base64 编解码** | `/tools/base64` | 文本 / 文件 Base64（标准 / URL-safe、多字符集、换行折叠） |
-| **JSON 格式化** | `/tools/json` | 美化 / 压缩、键排序、语法校验，默认保留中文 |
+| **代码格式化** | `/tools/json` | 多语言美化 / 压缩（JSON、JS/TS、Python、HTML/CSS/XML、SQL、YAML 等） |
 | **Markdown 编辑** | `/tools/markdown` | 左右分栏编辑与实时 HTML 预览，XSS 过滤，可导出 HTML |
 
 ### 平台能力
@@ -356,8 +356,10 @@ docker compose down
 | `POST` | `/tools/image-compress/compress-info` | 图片压缩统计 JSON |
 | `POST` | `/tools/base64/encode` | Base64 编码 |
 | `POST` | `/tools/base64/decode` | Base64 解码 |
-| `POST` | `/tools/json/format` | JSON 美化 / 压缩 |
-| `POST` | `/tools/json/validate` | JSON 校验 |
+| `POST` | `/tools/json/format` | 多语言代码美化 / 压缩（`language` 参数） |
+| `POST` | `/tools/json/validate` | 代码 / JSON 校验（`language` 参数） |
+| `GET` | `/tools/json/languages` | 支持的语言列表 |
+| `GET` | `/tools/json/sample` | 各语言示例代码 |
 | `POST` | `/tools/markdown/render` | Markdown → HTML JSON |
 | `POST` | `/tools/markdown/export-html` | 导出独立 HTML |
 | `POST` | `/tools/rmb/convert` | 金额大写 |
@@ -440,7 +442,7 @@ admin/                 # 管理后台
 tools/                 # 各工具 HTTP 路由与注册表
 converter/             # PDF → Word 算法
 word2pdf/              # Word → PDF 引擎
-coding/                # Base64 / JSON / Markdown 逻辑
+coding/                # Base64 / 代码格式化 / Markdown 逻辑
 office/                # 人民币大写等
 media/                 # 图片压缩
 storage/               # 上传归档 + 文件快递（SQLite + file/）

@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="多语言代码格式化 — JSON、JS/TS、Python、HTML/CSS/XML、SQL、YAML 等" />
-  <title>代码格式化 — 工具集</title>
+  <meta name="description" content="JSON 格式化与压缩 — 美化、最小化、键排序" />
+  <title>JSON 格式化 — 工具集</title>
   <link rel="stylesheet" href="{{ static_url('/static/css/tokens.css') }}" />
   <link rel="stylesheet" href="{{ static_url('/static/css/layout.css') }}" />
   <style>
@@ -59,7 +59,7 @@
     }
     .card-head {
       display: flex; gap: 14px; align-items: flex-start;
-      margin-bottom: 16px;
+      margin-bottom: 18px;
     }
     .icon {
       width: 48px; height: 48px; border-radius: 14px;
@@ -73,28 +73,6 @@
       margin-bottom: 4px;
     }
     .card-head p { font-size: 13px; color: var(--muted); line-height: 1.55; }
-
-    .lang-tabs {
-      display: flex; flex-wrap: wrap; gap: 4px;
-      padding: 4px; margin-bottom: 8px;
-      background: #f8fafc; border: 1px solid #eef2f7;
-      border-radius: 12px;
-    }
-    .lang-tab {
-      font: inherit; font-size: 12px; font-weight: 650;
-      padding: 6px 11px; border: none; border-radius: 8px;
-      background: transparent; color: var(--muted); cursor: pointer;
-      transition: background .15s, color .15s, box-shadow .15s;
-    }
-    .lang-tab:hover { color: #0f172a; background: rgba(255,255,255,.7); }
-    .lang-tab.active {
-      background: #fff; color: #b45309;
-      box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
-    }
-    .lang-hint {
-      font-size: 12px; color: var(--muted); margin: 0 0 12px;
-      min-height: 1.2em;
-    }
 
     .mode-tabs {
       display: flex; gap: 6px; padding: 4px;
@@ -110,9 +88,6 @@
     .mode-tab.active {
       background: #fff; color: #b45309;
       box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
-    }
-    .mode-tab:disabled {
-      opacity: 0.4; cursor: not-allowed;
     }
 
     .opts {
@@ -134,11 +109,14 @@
       outline: 2px solid rgba(217, 119, 6, 0.35);
       outline-offset: 1px;
     }
+    /* Pin the checkbox group to the right and hide the indent control with
+       display:none in minify mode. The fixed .opts height keeps the row and
+       editor panes from jumping when switching modes. */
     .opts-checks {
       display: flex; flex-wrap: wrap; gap: 10px 14px;
       margin-left: auto; align-items: flex-end;
     }
-    .field.is-inactive, .check.is-inactive { display: none; }
+    .field.is-inactive { display: none; }
     .check {
       display: inline-flex; align-items: center; gap: 7px;
       font-size: 12.5px; font-weight: 600; color: #475569;
@@ -169,7 +147,7 @@
     }
     .mini:hover { background: #fff; border-color: #fcd34d; color: #b45309; }
     textarea {
-      width: 100%; min-height: 260px; resize: vertical;
+      width: 100%; min-height: 220px; resize: vertical;
       font-family: var(--mono); font-size: 12.5px; line-height: 1.55;
       padding: 12px 14px; border-radius: 14px;
       border: 1px solid #e2e8f0; background: #fafbfc; color: var(--ink);
@@ -196,7 +174,6 @@
       border: 1px solid #e2e8f0; box-shadow: none;
     }
     .btn-ghost:hover { border-color: #fcd34d; color: #b45309; box-shadow: none; }
-    .btn.is-hidden { display: none; }
 
     .meta {
       margin-top: 12px; font-size: 12px; color: var(--muted);
@@ -216,10 +193,6 @@
     .tips {
       margin-top: 14px; font-size: 12px; color: var(--muted-2); line-height: 1.55;
     }
-    .tips code {
-      font-family: var(--mono); font-size: 11px;
-      padding: 1px 5px; border-radius: 4px; background: #f1f5f9;
-    }
   </style>
   <script>window.__ROOT__ = {{ root_path()|tojson }};</script>
 </head>
@@ -234,34 +207,19 @@
         </svg>
         编码工具
       </a>
-      <span class="chip" id="chipLabel">编码工具 · 代码格式化</span>
+      <span class="chip">编码工具 · JSON</span>
     </div>
 
     <div class="card">
       <div class="card-head">
         <div class="icon" aria-hidden="true">{ }</div>
         <div>
-          <h1>代码格式化</h1>
-          <p>通过选项卡切换语言，对 JSON、JS/TS、Python、HTML/CSS/XML、SQL、YAML、Java、Go、Rust 等代码进行美化、压缩与基础校验。</p>
+          <h1>JSON 格式化</h1>
+          <p>美化缩进、一键压缩、对象键排序，支持中文不转义；解析失败时提示行列位置。</p>
         </div>
       </div>
 
-      <div class="lang-tabs" role="tablist" aria-label="编程语言" id="langTabs">
-        {% for lang in languages %}
-        <button type="button"
-                class="lang-tab{% if lang.id == 'json' %} active{% endif %}"
-                role="tab"
-                data-lang="{{ lang.id }}"
-                data-modes="{{ lang.modes | join(',') }}"
-                data-options="{{ lang.options | join(',') }}"
-                data-validate="{{ '1' if lang.validate else '0' }}"
-                data-desc="{{ lang.description }}"
-                aria-selected="{{ 'true' if lang.id == 'json' else 'false' }}">{{ lang.label }}</button>
-        {% endfor %}
-      </div>
-      <p class="lang-hint" id="langHint">美化 / 压缩，键排序，中文可保留</p>
-
-      <div class="mode-tabs" role="tablist" aria-label="格式化模式">
+      <div class="mode-tabs" role="tablist">
         <button type="button" class="mode-tab active" data-mode="pretty" role="tab">格式化 Pretty</button>
         <button type="button" class="mode-tab" data-mode="minify" role="tab">压缩 Minify</button>
       </div>
@@ -275,11 +233,11 @@
           </select>
         </label>
         <div class="opts-checks">
-          <label class="check" id="sortKeysCheck">
+          <label class="check">
             <input type="checkbox" id="sortKeys" />
             按键名排序
           </label>
-          <label class="check" id="ensureAsciiCheck">
+          <label class="check">
             <input type="checkbox" id="ensureAscii" />
             ASCII 转义（\uXXXX）
           </label>
@@ -289,13 +247,13 @@
       <div class="panes">
         <div class="pane">
           <div class="pane-label">
-            <span id="inputLabel">输入代码</span>
+            <span>输入 JSON</span>
             <div class="pane-actions">
               <button type="button" class="mini" id="btnSample">示例</button>
               <button type="button" class="mini" id="btnClearIn">清空</button>
             </div>
           </div>
-          <textarea id="input" placeholder="在此粘贴代码…" spellcheck="false"></textarea>
+          <textarea id="input" placeholder='粘贴 JSON，例如 {"name":"工具集","ok":true}' spellcheck="false"></textarea>
         </div>
         <div class="pane">
           <div class="pane-label">
@@ -318,27 +276,21 @@
       <div class="meta" id="meta"></div>
       <div class="status" id="status"></div>
       <p class="tips">
-        提示：JSON / XML 提供结构解析与错误行列定位；其它语言采用缩进与括号规则整理，适合粘贴调试片段。
-        路径仍为 <code>/tools/json</code>，API 使用 <code>language</code> 参数。快捷键 Ctrl/Cmd + Enter。
+        提示：默认保留中文；需要兼容旧系统时可勾选 ASCII 转义。
+        快捷键 Ctrl/Cmd + Enter 执行当前模式。
       </p>
     </div>
   </div>
   </div>
 
   <script>
-    const root = (window.__ROOT__ || '').replace(/\/$/, '');
-    const api = (path) => root + path;
-
     const modeTabs = document.querySelectorAll('.mode-tab');
-    const langTabs = document.querySelectorAll('.lang-tab');
     const input = document.getElementById('input');
     const output = document.getElementById('output');
     const indent = document.getElementById('indent');
     const indentField = document.getElementById('indentField');
     const sortKeys = document.getElementById('sortKeys');
     const ensureAscii = document.getElementById('ensureAscii');
-    const sortKeysCheck = document.getElementById('sortKeysCheck');
-    const ensureAsciiCheck = document.getElementById('ensureAsciiCheck');
     const btnRun = document.getElementById('btnRun');
     const btnValidate = document.getElementById('btnValidate');
     const btnSwap = document.getElementById('btnSwap');
@@ -348,16 +300,8 @@
     const btnClearOut = document.getElementById('btnClearOut');
     const meta = document.getElementById('meta');
     const status = document.getElementById('status');
-    const langHint = document.getElementById('langHint');
-    const chipLabel = document.getElementById('chipLabel');
-    const inputLabel = document.getElementById('inputLabel');
 
     let mode = 'pretty';
-    let language = 'json';
-    let langLabel = 'JSON';
-    let langModes = ['pretty', 'minify'];
-    let langOptions = ['indent', 'sort_keys', 'ensure_ascii'];
-    let langValidate = true;
 
     function setStatus(kind, text) {
       status.className = 'status show ' + kind;
@@ -368,207 +312,135 @@
       status.textContent = '';
     }
 
-    function applyModeUI() {
+    function applyMode(next) {
+      mode = next;
       modeTabs.forEach((t) => {
-        const m = t.getAttribute('data-mode');
-        const allowed = langModes.indexOf(m) !== -1;
-        t.disabled = !allowed;
-        t.style.display = allowed ? '' : 'none';
-        t.classList.toggle('active', allowed && m === mode);
+        t.classList.toggle('active', t.getAttribute('data-mode') === mode);
       });
-      if (langModes.indexOf(mode) === -1) {
-        mode = langModes[0] || 'pretty';
-        modeTabs.forEach((t) => {
-          t.classList.toggle('active', t.getAttribute('data-mode') === mode);
-        });
-      }
       if (mode === 'pretty') {
         btnRun.textContent = '格式化';
-        if (langOptions.indexOf('indent') !== -1) {
-          indentField.classList.remove('is-inactive');
-          indentField.setAttribute('aria-hidden', 'false');
-        } else {
-          indentField.classList.add('is-inactive');
-        }
+        indentField.classList.remove('is-inactive');
+        indentField.setAttribute('aria-hidden', 'false');
       } else {
         btnRun.textContent = '压缩';
         indentField.classList.add('is-inactive');
         indentField.setAttribute('aria-hidden', 'true');
       }
-      sortKeysCheck.classList.toggle('is-inactive', langOptions.indexOf('sort_keys') === -1);
-      ensureAsciiCheck.classList.toggle('is-inactive', langOptions.indexOf('ensure_ascii') === -1);
-      if (langValidate) {
-        btnValidate.classList.remove('is-hidden');
-        btnValidate.disabled = false;
-      } else {
-        btnValidate.classList.add('is-hidden');
-      }
-      chipLabel.textContent = '编码工具 · ' + langLabel;
-      inputLabel.textContent = '输入 ' + langLabel;
-    }
-
-    function selectLanguage(tab) {
-      langTabs.forEach((t) => {
-        const on = t === tab;
-        t.classList.toggle('active', on);
-        t.setAttribute('aria-selected', on ? 'true' : 'false');
-      });
-      language = tab.getAttribute('data-lang');
-      langLabel = tab.textContent.trim();
-      langModes = (tab.getAttribute('data-modes') || 'pretty').split(',').filter(Boolean);
-      langOptions = (tab.getAttribute('data-options') || '').split(',').filter(Boolean);
-      langValidate = tab.getAttribute('data-validate') === '1';
-      langHint.textContent = tab.getAttribute('data-desc') || '';
-      applyModeUI();
       clearStatus();
-      meta.innerHTML = '';
     }
-
-    langTabs.forEach((tab) => {
-      tab.addEventListener('click', () => selectLanguage(tab));
-    });
 
     modeTabs.forEach((tab) => {
-      tab.addEventListener('click', () => {
-        if (tab.disabled) return;
-        mode = tab.getAttribute('data-mode');
-        applyModeUI();
-        clearStatus();
+      tab.addEventListener('click', () => applyMode(tab.getAttribute('data-mode')));
+    });
+    applyMode('pretty');
+
+    btnClearIn.addEventListener('click', () => { input.value = ''; });
+    btnClearOut.addEventListener('click', () => { output.value = ''; meta.innerHTML = ''; });
+
+    btnSample.addEventListener('click', () => {
+      input.value = JSON.stringify({
+        name: '工具集',
+        version: 1,
+        features: ['json', 'base64'],
+        nested: { ok: true, count: 2 },
+        empty: null
       });
     });
 
-    async function postForm(url, fields) {
-      const body = new FormData();
-      Object.keys(fields).forEach((k) => body.append(k, fields[k]));
-      const res = await fetch(api(url), { method: 'POST', body });
-      let data = null;
-      try { data = await res.json(); } catch (_) {}
-      if (!res.ok) {
-        const detail = data && data.detail;
-        let msg = '请求失败';
-        if (typeof detail === 'string') msg = detail;
-        else if (detail && typeof detail === 'object') {
-          msg = detail.message || JSON.stringify(detail);
-          if (detail.line != null) msg += '（第 ' + detail.line + ' 行，第 ' + detail.column + ' 列）';
-        }
-        const err = new Error(msg);
-        err.detail = detail;
-        throw err;
+    btnSwap.addEventListener('click', () => {
+      if (!output.value) return;
+      input.value = output.value;
+    });
+
+    btnCopy.addEventListener('click', async () => {
+      const text = output.value;
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        setStatus('ok', '已复制到剪贴板');
+      } catch (e) {
+        output.select();
+        document.execCommand('copy');
+        setStatus('ok', '已复制');
       }
-      return data;
+    });
+
+    function showMeta(obj) {
+      const parts = [];
+      if (obj.type) parts.push(`类型 <strong>${obj.type}</strong>`);
+      if (obj.mode) parts.push(`模式 <strong>${obj.mode}</strong>`);
+      if (obj.indent != null && obj.mode === 'pretty') parts.push(`缩进 <strong>${obj.indent}</strong>`);
+      if (obj.input_chars != null) parts.push(`输入 <strong>${obj.input_chars}</strong> 字符`);
+      if (obj.output_chars != null) parts.push(`输出 <strong>${obj.output_chars}</strong> 字符`);
+      if (obj.sort_keys) parts.push(`键排序 <strong>开</strong>`);
+      if (obj.ensure_ascii) parts.push(`ASCII <strong>开</strong>`);
+      meta.innerHTML = parts.join(' · ');
     }
 
-    function showMeta(data) {
-      const bits = [];
-      if (data.label || data.language) bits.push('<span><strong>语言</strong> ' + (data.label || data.language) + '</span>');
-      if (data.mode) bits.push('<span><strong>模式</strong> ' + (data.mode === 'minify' ? '压缩' : '美化') + '</span>');
-      if (data.type) bits.push('<span><strong>类型</strong> ' + data.type + '</span>');
-      if (data.input_chars != null) bits.push('<span><strong>输入</strong> ' + data.input_chars + ' 字符</span>');
-      if (data.output_chars != null) bits.push('<span><strong>输出</strong> ' + data.output_chars + ' 字符</span>');
-      meta.innerHTML = bits.join('');
+    function detailMessage(data) {
+      const detail = data.detail;
+      if (typeof detail === 'string') return detail;
+      if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
+        let msg = detail.message || detail.msg || '请求失败';
+        if (detail.line != null) {
+          msg += `（第 ${detail.line} 行，第 ${detail.column} 列）`;
+        }
+        return msg;
+      }
+      if (Array.isArray(detail)) {
+        return detail.map((d) => d.msg || d.message || d).join('; ');
+      }
+      return data.message || `HTTP 错误`;
     }
 
     async function runFormat() {
-      const text = input.value;
-      if (!text.trim()) {
-        setStatus('err', '请输入代码');
-        return;
-      }
+      clearStatus();
       btnRun.disabled = true;
-      btnValidate.disabled = true;
-      setStatus('info', '处理中…');
       try {
-        const data = await postForm('/tools/json/format', {
-          text: text,
-          language: language,
-          mode: mode,
-          indent: indent.value,
-          sort_keys: sortKeys.checked ? 'true' : 'false',
-          ensure_ascii: ensureAscii.checked ? 'true' : 'false',
-        });
+        const fd = new FormData();
+        fd.append('text', input.value);
+        fd.append('mode', mode);
+        fd.append('indent', indent.value);
+        fd.append('sort_keys', sortKeys.checked ? 'true' : 'false');
+        fd.append('ensure_ascii', ensureAscii.checked ? 'true' : 'false');
+        const res = await fetch((window.__ROOT__||'')+'/tools/json/format', { method: 'POST', body: fd });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(detailMessage(data));
         output.value = data.result || '';
+        setStatus('ok', mode === 'pretty' ? '格式化完成' : '压缩完成');
         showMeta(data);
-        setStatus('ok', '完成');
       } catch (err) {
         setStatus('err', err.message || String(err));
       } finally {
         btnRun.disabled = false;
-        applyModeUI();
       }
     }
 
     async function runValidate() {
-      const text = input.value;
-      if (!text.trim()) {
-        setStatus('err', '请输入代码');
-        return;
-      }
-      btnRun.disabled = true;
-      btnValidate.disabled = true;
-      setStatus('info', '校验中…');
+      clearStatus();
       try {
-        const data = await postForm('/tools/json/validate', {
-          text: text,
-          language: language,
-        });
+        const fd = new FormData();
+        fd.append('text', input.value);
+        const res = await fetch((window.__ROOT__||'')+'/tools/json/validate', { method: 'POST', body: fd });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(detailMessage(data));
         if (data.valid) {
-          let msg = '校验通过';
-          if (data.type) msg += ' · 类型 ' + data.type;
-          if (data.note) msg += ' · ' + data.note;
-          setStatus('ok', msg);
-          showMeta(data);
+          setStatus('ok', `JSON 有效（类型：${data.type || 'value'}）`);
+          meta.innerHTML = data.input_chars != null
+            ? `输入 <strong>${data.input_chars}</strong> 字符`
+            : '';
         } else {
-          let msg = data.error || '无效';
-          if (data.line != null) msg += '（第 ' + data.line + ' 行，第 ' + data.column + ' 列）';
+          let msg = data.error || 'JSON 无效';
+          if (data.line != null) msg += `（第 ${data.line} 行，第 ${data.column} 列）`;
           setStatus('err', msg);
         }
       } catch (err) {
         setStatus('err', err.message || String(err));
-      } finally {
-        btnRun.disabled = false;
-        applyModeUI();
       }
     }
 
     btnRun.addEventListener('click', runFormat);
     btnValidate.addEventListener('click', runValidate);
-
-    btnSample.addEventListener('click', async () => {
-      try {
-        const res = await fetch(api('/tools/json/sample?language=' + encodeURIComponent(language)));
-        const data = await res.json();
-        if (!res.ok) throw new Error((data && data.detail) || '获取示例失败');
-        input.value = data.sample || '';
-        setStatus('info', '已填入 ' + langLabel + ' 示例');
-      } catch (err) {
-        setStatus('err', err.message || String(err));
-      }
-    });
-
-    btnClearIn.addEventListener('click', () => {
-      input.value = '';
-      clearStatus();
-    });
-    btnClearOut.addEventListener('click', () => {
-      output.value = '';
-      meta.innerHTML = '';
-    });
-    btnCopy.addEventListener('click', async () => {
-      if (!output.value) { setStatus('err', '没有可复制的内容'); return; }
-      try {
-        await navigator.clipboard.writeText(output.value);
-        setStatus('ok', '已复制到剪贴板');
-      } catch (_) {
-        output.select();
-        document.execCommand('copy');
-        setStatus('ok', '已复制到剪贴板');
-      }
-    });
-    btnSwap.addEventListener('click', () => {
-      if (!output.value) return;
-      input.value = output.value;
-      setStatus('info', '已将输出填回输入');
-    });
 
     input.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -576,9 +448,6 @@
         runFormat();
       }
     });
-
-    const active = document.querySelector('.lang-tab.active') || langTabs[0];
-    if (active) selectLanguage(active);
   </script>
 </body>
 </html>
