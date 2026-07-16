@@ -268,6 +268,184 @@ def test_admin_uploads_preview(admin_client):
     assert client.get("/admin/uploads/nonexistent/preview").status_code == 404
 
 
+def test_admin_express_list_download_delete(admin_client):
+    """File express packages are managed separately under /admin/express."""
+    client, _, tmp_path = admin_client
+    import storage.express as ex
+
+    src = tmp_path / "parcel.bin"
+    src.write_bytes(b"express-admin-payload")
+    pkg = ex.create_package(
+        src,
+        "parcel.bin",
+        content_type="application/octet-stream",
+        max_downloads=3,
+        note="admin-test",
+    )
+
+    # Unauthenticated → login redirect
+    denied = client.get("/admin/express", follow_redirects=False)
+    assert denied.status_code in (303, 307, 302)
+    assert "/admin/login" in denied.headers.get("location", "")
+
+    _login(client)
+    page = client.get("/admin/express")
+    assert page.status_code == 200
+    assert "文件快递" in page.text
+    assert pkg["code"] in page.text
+    assert "parcel.bin" in page.text
+    assert "admin-test" in page.text
+    assert "batch-delete" in page.text
+
+    # Search by code
+    filtered = client.get("/admin/express", params={"q": pkg["code"]})
+    assert filtered.status_code == 200
+    assert pkg["code"] in filtered.text
+
+    dl = client.get(f"/admin/express/{pkg['id']}/download")
+    assert dl.status_code == 200
+    assert dl.content == b"express-admin-payload"
+
+    csrf = client.cookies.get("toolkit_csrf")
+    assert csrf
+    deleted = client.post(
+        f"/admin/express/{pkg['id']}/delete",
+        data={"csrf_token": csrf},
+        follow_redirects=False,
+    )
+    assert deleted.status_code in (303, 307, 302)
+    assert "deleted" in deleted.headers.get("location", "")
+    assert ex.get_package_by_id(pkg["id"]) is None
+
+
+def test_admin_express_batch_delete(admin_client):
+    client, _, tmp_path = admin_client
+    import storage.express as ex
+
+    pkgs = []
+    for name in ("e1.txt", "e2.txt", "keep.txt"):
+        src = tmp_path / name
+        src.write_bytes(name.encode())
+        pkgs.append(ex.create_package(src, name))
+
+    _login(client)
+    csrf = client.cookies.get("toolkit_csrf")
+    assert csrf
+
+    from urllib.parse import unquote
+
+    empty = client.post(
+        "/admin/express/batch-delete",
+        data={"csrf_token": csrf},
+        follow_redirects=False,
+    )
+    assert empty.status_code in (303, 307, 302)
+    assert "no selection" in unquote(empty.headers.get("location", ""))
+
+    deleted = client.post(
+        "/admin/express/batch-delete",
+        data={
+            "csrf_token": csrf,
+            "ids": [pkgs[0]["id"], pkgs[1]["id"], "missing-id"],
+        },
+        follow_redirects=False,
+    )
+    assert deleted.status_code in (303, 307, 302)
+    assert "deleted" in deleted.headers.get("location", "")
+    assert ex.get_package_by_id(pkgs[0]["id"]) is None
+    assert ex.get_package_by_id(pkgs[1]["id"]) is None
+    assert ex.get_package_by_id(pkgs[2]["id"]) is not None
+
+
+def test_admin_express_list_download_delete(admin_client):
+    """File express packages are managed separately under /admin/express."""
+    client, _, tmp_path = admin_client
+    import storage.express as ex
+
+    src = tmp_path / "parcel.bin"
+    src.write_bytes(b"express-admin-payload")
+    pkg = ex.create_package(
+        src,
+        "parcel.bin",
+        content_type="application/octet-stream",
+        max_downloads=3,
+        note="admin-test",
+    )
+
+    # Unauthenticated → login redirect
+    denied = client.get("/admin/express", follow_redirects=False)
+    assert denied.status_code in (303, 307, 302)
+    assert "/admin/login" in denied.headers.get("location", "")
+
+    _login(client)
+    page = client.get("/admin/express")
+    assert page.status_code == 200
+    assert "文件快递" in page.text
+    assert pkg["code"] in page.text
+    assert "parcel.bin" in page.text
+    assert "admin-test" in page.text
+    assert "batch-delete" in page.text
+
+    # Search by code
+    filtered = client.get("/admin/express", params={"q": pkg["code"]})
+    assert filtered.status_code == 200
+    assert pkg["code"] in filtered.text
+
+    dl = client.get(f"/admin/express/{pkg['id']}/download")
+    assert dl.status_code == 200
+    assert dl.content == b"express-admin-payload"
+
+    csrf = client.cookies.get("toolkit_csrf")
+    assert csrf
+    deleted = client.post(
+        f"/admin/express/{pkg['id']}/delete",
+        data={"csrf_token": csrf},
+        follow_redirects=False,
+    )
+    assert deleted.status_code in (303, 307, 302)
+    assert "deleted" in deleted.headers.get("location", "")
+    assert ex.get_package_by_id(pkg["id"]) is None
+
+
+def test_admin_express_batch_delete(admin_client):
+    client, _, tmp_path = admin_client
+    import storage.express as ex
+
+    pkgs = []
+    for name in ("e1.txt", "e2.txt", "keep.txt"):
+        src = tmp_path / name
+        src.write_bytes(name.encode())
+        pkgs.append(ex.create_package(src, name))
+
+    _login(client)
+    csrf = client.cookies.get("toolkit_csrf")
+    assert csrf
+
+    from urllib.parse import unquote
+
+    empty = client.post(
+        "/admin/express/batch-delete",
+        data={"csrf_token": csrf},
+        follow_redirects=False,
+    )
+    assert empty.status_code in (303, 307, 302)
+    assert "no selection" in unquote(empty.headers.get("location", ""))
+
+    deleted = client.post(
+        "/admin/express/batch-delete",
+        data={
+            "csrf_token": csrf,
+            "ids": [pkgs[0]["id"], pkgs[1]["id"], "missing-id"],
+        },
+        follow_redirects=False,
+    )
+    assert deleted.status_code in (303, 307, 302)
+    assert "deleted" in deleted.headers.get("location", "")
+    assert ex.get_package_by_id(pkgs[0]["id"]) is None
+    assert ex.get_package_by_id(pkgs[1]["id"]) is None
+    assert ex.get_package_by_id(pkgs[2]["id"]) is not None
+
+
 def test_admin_uploads_word_preview_pdf(admin_client, monkeypatch):
     """Word .docx/.doc preview converts to PDF via word2pdf (mocked)."""
     from docx import Document

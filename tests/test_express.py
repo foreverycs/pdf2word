@@ -221,3 +221,57 @@ def test_api_bad_code_and_ttl(express_client):
         data={"ttl_hours": "99999"},
     )
     assert ttl.status_code == 400
+
+
+def test_list_delete_packages_admin_api(express_env, tmp_path):
+    ex, _ = express_env
+    src1 = _touch(tmp_path / "a.txt", b"aaa")
+    src2 = _touch(tmp_path / "b.txt", b"bbb")
+    p1 = ex.create_package(src1, "a.txt", note="alpha", max_downloads=1)
+    p2 = ex.create_package(src2, "b.txt", note="beta")
+
+    listed = ex.list_packages(limit=50)
+    ids = {p["id"] for p in listed}
+    assert p1["id"] in ids and p2["id"] in ids
+    assert all("file_exists" in p for p in listed)
+    assert all(p.get("file_exists") for p in listed if p["id"] in ids)
+
+    by_q = ex.list_packages(q="alpha")
+    assert len(by_q) == 1 and by_q[0]["id"] == p1["id"]
+
+    got = ex.get_package_by_id(p1["id"])
+    assert got is not None and got["code"] == p1["code"]
+    assert got["file_exists"] is True
+
+    assert ex.delete_package(p1["id"]) is True
+    assert ex.get_package_by_id(p1["id"]) is None
+    assert ex.delete_packages([p2["id"], "missing"]) == 1
+    assert ex.get_package_by_id(p2["id"]) is None
+    assert ex.delete_packages([]) == 0
+
+
+def test_list_delete_packages_admin_api(express_env, tmp_path):
+    ex, _ = express_env
+    src1 = _touch(tmp_path / "a.txt", b"aaa")
+    src2 = _touch(tmp_path / "b.txt", b"bbb")
+    p1 = ex.create_package(src1, "a.txt", note="alpha", max_downloads=1)
+    p2 = ex.create_package(src2, "b.txt", note="beta")
+
+    listed = ex.list_packages(limit=50)
+    ids = {p["id"] for p in listed}
+    assert p1["id"] in ids and p2["id"] in ids
+    assert all("file_exists" in p for p in listed)
+    assert all(p.get("file_exists") for p in listed if p["id"] in ids)
+
+    by_q = ex.list_packages(q="alpha")
+    assert len(by_q) == 1 and by_q[0]["id"] == p1["id"]
+
+    got = ex.get_package_by_id(p1["id"])
+    assert got is not None and got["code"] == p1["code"]
+    assert got["file_exists"] is True
+
+    assert ex.delete_package(p1["id"]) is True
+    assert ex.get_package_by_id(p1["id"]) is None
+    assert ex.delete_packages([p2["id"], "missing"]) == 1
+    assert ex.get_package_by_id(p2["id"]) is None
+    assert ex.delete_packages([]) == 0

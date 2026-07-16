@@ -422,17 +422,117 @@ def express_stats() -> Dict[str, Any]:
     }
 
 
-def list_packages(limit: int = 50) -> List[Dict[str, Any]]:
-    """Recent packages (admin diagnostics)."""
+def _package_with_file(row: sqlite3.Row | Dict[str, Any]) -> Dict[str, Any]:
+    """Public package dict plus admin file-path fields."""
+    info = _row_public(row, include_path=True)
+    path = resolve_package_file(info)
+    info["file_exists"] = path is not None
+    return info
+
+
+def get_package_by_id(package_id: str) -> Optional[Dict[str, Any]]:
+    """Lookup by package id (admin). Includes stored_rel / file_exists."""
+    pid = (package_id or "").strip()
+    if not pid:
+        return None
     cleanup_express()
-    limit = max(1, min(200, int(limit)))
     with _lock:
         conn = _get_conn()
         try:
-            rows = conn.execute(
-                "SELECT * FROM packages ORDER BY created_at DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
-            return [_row_public(r) for r in rows]
+            row = conn.execute(
+                "SELECT * FROM packages WHERE id = ?", (pid,)
+            ).fetchone()
+            if row is None:
+                return None
+            return _package_with_file(row)
         finally:
             conn.close()
+
+
+def list_packages(
+    limit: int = 50,
+    *,
+    q: Optional[str] = None,
+    status: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """List packages for admin (newest first).
+
+    Optional filters:
+    - ``q``: substring match on code / original_name / note / id
+    - ``status``: ``available`` | ``expired`` | ``exhausted`` | ``missing``
+    """
+    cleanup_express()
+    limit = max(1, min(500, int(limit)))
+    q_f = (q or "").strip().lower()
+    status_f = (status or "").strip().lower()
+    with _lock:
+        conn = _get_conn()
+        try:
+            # Fetch a wider window when filtering so status/q still see enough rows.
+            fetch_n = limit if not (q_f or status_f) else min(500, max(limit * 5, 200))
+            rows = conn.execute(
+                "SELECT * FROM packages ORDER BY created_at DESC LIMIT ?",
+                (fetch_n,),
+            ).fetchall()
+            items = [_package_with_file(r) for r in rows]
+        finally:
+            conn.close()
+
+    if q_f:
+        items = [
+            p
+            for p in items
+            if q_f in str(p.get("code") or "").lower()
+            or q_f in str(p.get("original_name") or "").lower()
+            or q_f in str(p.get("note") or "").lower()
+            or q_f in str(p.get("id") or "").lower()
+        ]
+    if status_f == "available":
+        items = [p for p in items if p.get("available") and p.get("file_exists")]
+    elif status_f == "expired":
+        items = [p for p in items if p.get("expired")]
+    elif status_f == "exhausted":
+        items = [p for p in items if p.get("exhausted") and not p.get("expired")]
+    elif status_f == "missing":
+        items = [p for p in items if not p.get("file_exists")]
+
+    return items[:limit]
+
+
+def delete_package(package_id: str) -> bool:
+    """Delete one package and its file. Returns True if a row was removed."""
+    return delete_packages([package_id]) == 1
+
+
+def delete_packages(package_ids: List[str]) -> int:
+    """Delete multiple packages by id. Returns number of rows removed."""
+    ids = []
+    seen = set()
+    for raw in package_ids or []:
+        pid = str(raw or "").strip()
+        if not pid or pid in seen:
+            continue
+        seen.add(pid)
+        ids.append(pid)
+    if not ids:
+        return 0
+
+    removed = 0
+    with _lock:
+        conn = _get_conn()
+        try:
+            for pid in ids:
+                row = conn.execute(
+                    "SELECT * FROM packages WHERE id = ?", (pid,)
+                ).fetchone()
+                if row is None:
+                    continue
+                _unlink_package_file(str(row["stored_rel"] or ""))
+                conn.execute("DELETE FROM packages WHERE id = ?", (pid,))
+                removed += 1
+            if removed:
+                conn.commit()
+                logger.info("express delete packages removed=%s", removed)
+        finally:
+            conn.close()
+    return removed

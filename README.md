@@ -42,7 +42,7 @@
 - **批量转换**：多文件上传，结果打 ZIP；并发受 `CONVERT_CONCURRENCY` 限制
 - **上传归档**：成功后仅保存**输入文件**到 `file/`（默认保留 5 天），管理后台可查看
 - **功能开关**：后台按工具启用 / 关闭；关闭后首页隐藏，页面与 API 返回 403
-- **管理后台**：仪表盘、上传记录、功能开关、系统状态；登录限流 + CSRF
+- **管理后台**：仪表盘、上传记录、文件快递、功能开关、系统状态；登录限流 + CSRF
 - **可观测性**：`X-Request-ID`、`/health`、公开接口 IP 限流
 
 ---
@@ -164,6 +164,12 @@ export ADMIN_SECRET='please-use-a-long-random-string-here'
 ```
 
 本地开发可直接使用 `.env.example` 中的 `ALLOW_INSECURE_ADMIN=1`。
+
+### 文件快递记录
+
+地址：http://127.0.0.1:8000/admin/express（需登录）
+
+与「上传记录」相互独立：列出取件码包裹，支持按状态/关键词筛选、下载原文件、单条/批量删除、清理过期项。数据存放在 `file/express/`。
 
 ### 功能开关
 
@@ -355,6 +361,12 @@ docker compose down
 | `POST` | `/tools/express/pickup` | 按取件码下载（表单） |
 | `GET` | `/tools/express/pickup/{code}` | 按取件码下载（路径，可收藏） |
 | `GET` | `/admin` | 管理后台（需登录） |
+| `GET` | `/admin/uploads` | 通用上传记录（需管理员） |
+| `GET` | `/admin/express` | 文件快递记录（需管理员） |
+| `POST` | `/admin/express/batch-delete` | 批量删除快递包裹（需管理员 + CSRF） |
+| `POST` | `/admin/express/{id}/delete` | 删除快递包裹（需管理员 + CSRF） |
+| `GET` | `/admin/express/{id}/download` | 下载快递文件（需管理员） |
+| `POST` | `/admin/express/cleanup` | 清理过期快递（需管理员 + CSRF） |
 | `GET` | `/admin/tools` | 功能开关页面（需管理员） |
 | `POST` | `/admin/tools` | 批量保存功能开关（需管理员 + CSRF） |
 | `POST` | `/admin/tools/{slug}/toggle` | 切换单个工具（需管理员 + CSRF） |
