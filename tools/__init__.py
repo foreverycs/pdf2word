@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from .base64_tool import router as base64_router
+from .image_compress_tool import router as image_compress_router
 from .json_tool import router as json_router
 from .pdf2word import router as pdf2word_router
 from .pdf_merge import router as pdf_merge_router
@@ -29,11 +30,11 @@ TOOL_CATEGORIES: List[Dict[str, Any]] = [
         "id": "office",
         "name": "办公工具",
         "name_en": "Office",
-        "description": "发票合并、金额大写等日常办公小工具",
+        "description": "发票合并、金额大写、图片压缩等日常办公小工具",
         "icon": "💼",
         "accent": "emerald",
         "route": "/c/office",
-        "lead": "财务与办公场景常用的小工具：发票合并、人民币大写等。",
+        "lead": "财务与办公场景常用的小工具：发票合并、人民币大写、图片压缩等。",
     },
     {
         "id": "coding",
@@ -123,6 +124,18 @@ TOOL_REGISTRY: List[Dict[str, Any]] = [
         "cta": "打开工具",
         "accent": "emerald",
     },
+    {
+        "name": "图片压缩",
+        "slug": "image-compress",
+        "category": "office",
+        "description": "高观感压缩 JPEG / PNG / GIF / SVG：显著减小体积，尽量保持清晰与细节。",
+        "icon": "🖼️",
+        "route": "/tools/image-compress",
+        "badge": "JPEG · PNG · GIF · SVG",
+        "features": ["近无损观感", "多格式", "去元数据", "压缩对比"],
+        "cta": "开始压缩",
+        "accent": "violet",
+    },
 ]
 
 # Routers to mount on the FastAPI app (order does not matter).
@@ -133,6 +146,7 @@ TOOL_ROUTERS = (
     base64_router,
     json_router,
     rmb_router,
+    image_compress_router,
 )
 
 
@@ -204,4 +218,5 @@ __all__ = [
     "base64_router",
     "json_router",
     "rmb_router",
+    "image_compress_router",
 ]

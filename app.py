@@ -151,6 +151,7 @@ def _is_public_convert_path(path: str) -> bool:
         "/convert-batch-async",
         "/convert-batch",
         "/convert",
+        "/compress",  # image-compress (and future media tools)
     )
     return any(m in path for m in markers)
 
