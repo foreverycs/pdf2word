@@ -105,6 +105,56 @@
       border-radius: 12px;
       padding: 12px 12px 10px;
     }
+    .hud-stat-hero {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+      background:
+        linear-gradient(135deg, rgba(79, 70, 229, 0.08), rgba(14, 165, 233, 0.05) 55%, #f8fafc),
+        #fff;
+      border-color: rgba(99, 102, 241, 0.16);
+    }
+    .hud-stat-hero .hud-val {
+      font-size: 1.65rem;
+      line-height: 1;
+    }
+    .hud-stat-hero .hud-lab {
+      margin-top: 5px;
+      font-size: 12px;
+      color: #64748b;
+    }
+    .hud-mix {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      justify-content: flex-end;
+    }
+    .hud-mix-chip {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 4px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #4338ca;
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid rgba(99, 102, 241, 0.18);
+      padding: 5px 10px;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+    .hud-mix-chip strong {
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+      color: #4f46e5;
+    }
+    .hud-mix-chip span {
+      font-weight: 600;
+      color: #64748b;
+      font-size: 11px;
+    }
     .hud-val {
       font-size: 1.25rem;
       font-weight: 800;
@@ -326,13 +376,17 @@
           <span class="hud-live"><i></i> LIVE</span>
         </div>
         <div class="hud-stats">
-          <div class="hud-stat">
-            <div class="hud-val">{{ tool_count }}</div>
-            <div class="hud-lab">可用工具</div>
-          </div>
-          <div class="hud-stat">
-            <div class="hud-val">{{ module_count }}{% if featured_count %}+{{ featured_count }}{% endif %}</div>
-            <div class="hud-lab">模块{% if featured_count %} + 特色{% endif %}</div>
+          <div class="hud-stat hud-stat-hero">
+            <div>
+              <div class="hud-val">{{ tool_count }}</div>
+              <div class="hud-lab">可用工具</div>
+            </div>
+            {% if featured_count %}
+            <div class="hud-mix" aria-label="模块 {{ module_count }}，特色 {{ featured_count }}">
+              <span class="hud-mix-chip"><strong>{{ module_count }}</strong><span>模块</span></span>
+              <span class="hud-mix-chip"><strong>{{ featured_count }}</strong><span>特色</span></span>
+            </div>
+            {% endif %}
           </div>
           <div class="hud-stat">
             <div class="hud-val">{{ nav_items|length }}</div>

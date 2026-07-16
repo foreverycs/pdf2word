@@ -110,13 +110,16 @@ def test_home_lists_categories_and_base64():
     assert "特色功能" in r.text or "文件快递" in r.text
     assert "/tools/express" in r.text
     assert 'id="featured"' in r.text
-    # Homepage stats: modules + featured
+    # Homepage stats: total + module/featured chips
     module_n = len(enabled_tools())
     featured_n = len(featured_tools())
     total = module_n + featured_n
     assert str(total) in r.text
-    assert f"{module_n}+{featured_n}" in r.text or "模块 + 特色" in r.text
-    assert f"{module_n} 模块" in r.text
+    assert "可用工具" in r.text
+    assert "hud-stat-hero" in r.text
+    assert "hud-mix-chip" in r.text
+    assert "模块" in r.text and "特色" in r.text
+    assert str(module_n) in r.text and str(featured_n) in r.text
 
 
 def test_express_not_in_office_module_page():
