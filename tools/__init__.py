@@ -12,6 +12,7 @@ from .markdown_tool import router as markdown_router
 from .pdf2word import router as pdf2word_router
 from .pdf_merge import router as pdf_merge_router
 from .rmb_tool import router as rmb_router
+from .unicode_tool import router as unicode_router
 from .word2pdf import router as word2pdf_router
 
 # ---------------------------------------------------------------------------
@@ -42,7 +43,7 @@ TOOL_CATEGORIES: List[Dict[str, Any]] = [
         "id": "coding",
         "name": "编码工具",
         "name_en": "Encoding",
-        "description": "Base64、JSON、Markdown 等编解码与文本处理",
+        "description": "Base64、Unicode、JSON、Markdown 等编解码与文本处理",
         "icon": "🔐",
         "accent": "amber",
         "route": "/c/coding",
@@ -99,6 +100,18 @@ TOOL_REGISTRY: List[Dict[str, Any]] = [
         "route": "/tools/base64",
         "badge": "Encode · Decode",
         "features": ["标准 / URL-safe", "UTF-8 等", "文件编码", "一键复制"],
+        "cta": "打开工具",
+        "accent": "amber",
+    },
+    {
+        "name": "中文 Unicode 还原",
+        "slug": "unicode",
+        "category": "coding",
+        "description": "将 \\uXXXX、U+XXXX、HTML 实体等 Unicode 转义还原为中文，也可反向编码。",
+        "icon": "文",
+        "route": "/tools/unicode",
+        "badge": "\\u → 中文",
+        "features": ["\\uXXXX 还原", "双重转义", "U+ / HTML", "反向编码"],
         "cta": "打开工具",
         "accent": "amber",
     },
@@ -173,6 +186,7 @@ TOOL_ROUTERS = (
     word2pdf_router,
     pdf_merge_router,
     base64_router,
+    unicode_router,
     json_router,
     markdown_router,
     rmb_router,
@@ -321,6 +335,7 @@ __all__ = [
     "word2pdf_router",
     "pdf_merge_router",
     "base64_router",
+    "unicode_router",
     "json_router",
     "markdown_router",
     "rmb_router",
