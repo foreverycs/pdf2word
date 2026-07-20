@@ -26,6 +26,7 @@
 | **发票合并** | `/tools/pdf-merge` | 两张发票合并到一张 A4：上下半页、中间分割线、页内预览打印 |
 | **人民币大写** | `/tools/rmb` | 阿拉伯数字金额 → 财务规范中文大写（角分、千分位） |
 | **图片压缩** | `/tools/image-compress` | JPEG / PNG / GIF / SVG 高观感压缩，尽量保持清晰 |
+| **图片格式转换** | `/tools/image-convert` | JPEG / PNG / WebP / GIF / BMP / TIFF / ICO 互转（透明铺底、动图保留、质量可调） |
 
 
 ### 特色功能 · 首页
@@ -75,6 +76,13 @@
 - 保持原格式：JPEG / PNG / GIF / SVG
 - 预设：高质量 / 均衡（推荐）/ 强压缩；默认去除 EXIF 等元数据（方向先烘焙进像素）
 - 压缩后若更大则保留原文件；强压缩可限制最长边（默认 2560px）
+
+### 图片格式转换
+
+- 支持 JPEG / PNG / WebP / GIF / BMP / TIFF / ICO 互转（不支持 SVG 栅格化）
+- PNG/WebP 透明通道导出到 JPEG/BMP 时按所选底色铺平
+- 动图 → GIF/WebP 保留多帧；导出到静态格式仅保留首帧
+- JPEG/WebP 质量 1–100 可调；ICO 超大图自动缩到最长边 256
 
 ### Markdown 编辑
 
@@ -354,6 +362,9 @@ docker compose down
 | `POST` | `/tools/pdf-merge/merge` | 发票合并 |
 | `POST` | `/tools/image-compress/compress` | 图片压缩（返回文件） |
 | `POST` | `/tools/image-compress/compress-info` | 图片压缩统计 JSON |
+| `GET` | `/tools/image-convert/formats` | 图片格式转换支持的输入 / 输出格式 |
+| `POST` | `/tools/image-convert/convert` | 图片格式转换（返回文件） |
+| `POST` | `/tools/image-convert/convert-info` | 图片格式转换统计 JSON |
 | `POST` | `/tools/base64/encode` | Base64 编码 |
 | `POST` | `/tools/base64/decode` | Base64 解码 |
 | `POST` | `/tools/code-format/format` | 多语言代码美化 / 压缩（`language` 参数） |
@@ -412,6 +423,19 @@ docker compose down
 
 响应头：`X-Original-Bytes`、`X-Compressed-Bytes`、`X-Percent-Saved` 等。
 
+
+### 图片格式转换表单字段
+
+| 字段 | 说明 |
+|------|------|
+| ile | 图片文件 |
+| 	arget_format | jpeg / png / webp / gif / mp / 	iff / ico（jpg → jpeg） |
+| quality | 1–100，默认 85（JPEG / WebP） |
+| strip_meta | 默认 	rue |
+| ackground | 透明铺底色，默认 #ffffff |
+
+响应头：X-Original-Bytes、X-Output-Bytes、X-Source-Format、X-Target-Format 等。
+
 ---
 
 ## 测试
@@ -444,7 +468,7 @@ converter/             # PDF → Word 算法
 word2pdf/              # Word → PDF 引擎
 coding/                # Base64 / 代码格式化 / Markdown 逻辑
 office/                # 人民币大写等
-media/                 # 图片压缩
+media/                 # 图片压缩 / 格式转换 / 格式转换
 storage/               # 上传归档 + 文件快递（SQLite + file/）
 templates/             # Jinja2 页面
 static/                # CSS / JS

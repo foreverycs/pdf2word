@@ -13,6 +13,7 @@ from .markdown_tool import router as markdown_router
 from .pdf2word import router as pdf2word_router
 from .pdf_merge import router as pdf_merge_router
 from .rmb_tool import router as rmb_router
+from .unicode_tool import router as unicode_router
 from .word2pdf import router as word2pdf_router
 
 # ---------------------------------------------------------------------------
@@ -33,17 +34,17 @@ TOOL_CATEGORIES: List[Dict[str, Any]] = [
         "id": "office",
         "name": "办公工具",
         "name_en": "Office",
-        "description": "发票合并、金额大写、图片压缩等日常办公小工具",
+        "description": "发票合并、金额大写、图片压缩与格式转换等日常办公小工具",
         "icon": "💼",
         "accent": "emerald",
         "route": "/c/office",
-        "lead": "财务与办公场景常用的小工具：发票合并、人民币大写、图片压缩等。",
+        "lead": "财务与办公场景常用的小工具：发票合并、人民币大写、图片压缩与格式转换等。",
     },
     {
         "id": "coding",
         "name": "编码工具",
         "name_en": "Encoding",
-        "description": "Base64、JSON、Markdown 等编解码与文本处理",
+        "description": "Base64、Unicode、JSON、Markdown 等编解码与文本处理",
         "icon": "🔐",
         "accent": "amber",
         "route": "/c/coding",
@@ -104,6 +105,18 @@ TOOL_REGISTRY: List[Dict[str, Any]] = [
         "accent": "amber",
     },
     {
+        "name": "中文 Unicode 还原",
+        "slug": "unicode",
+        "category": "coding",
+        "description": "将 \\uXXXX、U+XXXX、HTML 实体等 Unicode 转义还原为中文，也可反向编码。",
+        "icon": "文",
+        "route": "/tools/unicode",
+        "badge": "\\u → 中文",
+        "features": ["\\uXXXX 还原", "双重转义", "U+ / HTML", "反向编码"],
+        "cta": "打开工具",
+        "accent": "amber",
+    },
+    {
         "name": "代码格式化",
         "slug": "code-format",
         "category": "coding",
@@ -152,6 +165,18 @@ TOOL_REGISTRY: List[Dict[str, Any]] = [
         "accent": "violet",
     },
     {
+        "name": "图片格式转换",
+        "slug": "image-convert",
+        "category": "office",
+        "description": "JPEG / PNG / WebP / GIF / BMP / TIFF / ICO 互转：透明铺底、动图保留、质量可调。",
+        "icon": "🔄",
+        "route": "/tools/image-convert",
+        "badge": "JPEG · PNG · WebP · …",
+        "features": ["七种格式", "保留透明", "动图支持", "质量可调"],
+        "cta": "开始转换",
+        "accent": "sky",
+    },
+    {
         "name": "文件快递",
         "slug": "express",
         "category": "office",
@@ -180,6 +205,7 @@ TOOL_ROUTERS = (
     markdown_router,
     rmb_router,
     image_compress_router,
+    image_convert_router,
     express_router,
 )
 
@@ -324,9 +350,11 @@ __all__ = [
     "word2pdf_router",
     "pdf_merge_router",
     "base64_router",
+    "unicode_router",
     "json_router",
     "markdown_router",
     "rmb_router",
     "image_compress_router",
+    "image_convert_router",
     "express_router",
 ]

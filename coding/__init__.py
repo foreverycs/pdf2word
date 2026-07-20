@@ -21,6 +21,12 @@ from .markdown_render import (
     render_markdown,
     sample_markdown,
 )
+from .unicode_codec import (
+    UnicodeCodecError,
+    decode_unicode,
+    encode_unicode,
+    probe_unicode,
+)
 
 __all__ = [
     "encode_base64",
@@ -38,4 +44,8 @@ __all__ = [
     "render_markdown",
     "sample_markdown",
     "MarkdownError",
+    "decode_unicode",
+    "encode_unicode",
+    "probe_unicode",
+    "UnicodeCodecError",
 ]

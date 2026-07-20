@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="中文 Unicode 还原 — \uXXXX / U+ / HTML 实体 转中文" />
+  <title>中文 Unicode 还原 — 工具集</title>
+  <link rel="stylesheet" href="{{ static_url('/static/css/tokens.css') }}" />
+  <link rel="stylesheet" href="{{ static_url('/static/css/layout.css') }}" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font);
+      color: var(--ink);
+      min-height: 100vh;
+      background: var(--bg);
+    }
+    .bg {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background:
+        radial-gradient(ellipse 70% 50% at 15% 8%, rgba(245, 158, 11, 0.22), transparent 55%),
+        radial-gradient(ellipse 55% 40% at 90% 10%, rgba(99, 102, 241, 0.14), transparent 50%),
+        linear-gradient(165deg, #fffbeb 0%, #eef2f7 45%, #f5f7fb 100%);
+    }
+    .shell {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+    }
+    .nav {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 14px; gap: 12px;
+    }
+    .back {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 13px; font-weight: 600; color: var(--muted);
+      text-decoration: none; padding: 8px 12px;
+      background: var(--surface); border: 1px solid var(--line);
+      border-radius: 999px; backdrop-filter: blur(10px);
+      transition: color .15s, border-color .15s, background .15s;
+    }
+    .back:hover { color: #d97706; border-color: #fde68a; background: #fff; }
+    .back svg { width: 15px; height: 15px; }
+    .chip {
+      font-size: 11px; font-weight: 700; color: #b45309;
+      background: #fffbeb; border: 1px solid #fde68a;
+      padding: 6px 11px; border-radius: 999px;
+    }
+
+    .card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 24px 24px 20px;
+      overflow: hidden;
+      position: relative;
+    }
+    .card::before {
+      content: "";
+      position: absolute; left: 0; right: 0; top: 0; height: 3px;
+      background: linear-gradient(90deg, #d97706, #f59e0b, #4f46e5);
+    }
+    .card-head {
+      display: flex; gap: 14px; align-items: flex-start;
+      margin-bottom: 18px;
+    }
+    .icon {
+      width: 48px; height: 48px; border-radius: 14px;
+      display: grid; place-items: center; font-size: 20px; flex-shrink: 0;
+      font-weight: 800; color: #fff;
+      background: linear-gradient(145deg, #fbbf24, #d97706);
+      box-shadow: 0 10px 22px rgba(217, 119, 6, 0.3);
+    }
+    .card-head h1 {
+      font-size: 1.25rem; font-weight: 750; letter-spacing: -0.02em;
+      margin-bottom: 4px;
+    }
+    .card-head p { font-size: 13px; color: var(--muted); line-height: 1.55; }
+
+    .mode-tabs {
+      display: flex; gap: 6px; padding: 4px;
+      background: #f8fafc; border: 1px solid #eef2f7;
+      border-radius: 12px; margin-bottom: 16px; width: fit-content;
+    }
+    .mode-tab {
+      font: inherit; font-size: 13px; font-weight: 650;
+      padding: 8px 16px; border: none; border-radius: 9px;
+      background: transparent; color: var(--muted); cursor: pointer;
+      transition: background .15s, color .15s, box-shadow .15s;
+    }
+    .mode-tab.active {
+      background: #fff; color: #b45309;
+      box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+    }
+
+    .opts {
+      display: flex; flex-wrap: wrap; gap: 10px 14px;
+      margin-bottom: 14px; align-items: flex-end;
+    }
+    .field {
+      display: flex; flex-direction: column; gap: 5px;
+      font-size: 12px; font-weight: 650; color: #475569;
+    }
+    .field select {
+      font: inherit; font-size: 13px; font-weight: 500;
+      padding: 8px 10px; border-radius: 10px;
+      border: 1px solid #e2e8f0; background: #fff; color: var(--ink);
+      min-width: 140px;
+    }
+    .field select:focus, textarea:focus {
+      outline: 2px solid rgba(217, 119, 6, 0.35);
+      outline-offset: 1px;
+    }
+    .check {
+      display: inline-flex; align-items: center; gap: 7px;
+      font-size: 12.5px; font-weight: 600; color: #475569;
+      cursor: pointer; user-select: none; padding-bottom: 2px;
+    }
+
+    .panes {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    @media (max-width: 760px) {
+      .panes { grid-template-columns: 1fr; }
+    }
+    .pane {
+      display: flex; flex-direction: column; gap: 8px; min-width: 0;
+    }
+    .pane-label {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 12px; font-weight: 700; color: #475569;
+    }
+    .pane-actions { display: flex; gap: 6px; }
+    .mini {
+      font: inherit; font-size: 11px; font-weight: 650;
+      padding: 4px 9px; border-radius: 8px; cursor: pointer;
+      border: 1px solid #e2e8f0; background: #f8fafc; color: #475569;
+      transition: background .12s, border-color .12s, color .12s;
+    }
+    .mini:hover { background: #fff; border-color: #fcd34d; color: #b45309; }
+    textarea {
+      width: 100%; min-height: 220px; resize: vertical;
+      font-family: var(--mono); font-size: 13px; line-height: 1.55;
+      padding: 12px 14px; border-radius: 14px;
+      border: 1px solid #e2e8f0; background: #fafbfc; color: var(--ink);
+    }
+    textarea[readonly] { background: #f8fafc; color: #0f172a; }
+
+    .samples {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      margin-top: 2px; margin-bottom: 4px;
+    }
+    .sample-chip {
+      font: inherit; font-size: 12px; font-weight: 650;
+      padding: 6px 11px; border-radius: 999px; cursor: pointer;
+      border: 1px solid #fde68a; background: #fffbeb; color: #b45309;
+      transition: background .12s, border-color .12s;
+    }
+    .sample-chip:hover { background: #fff; border-color: #f59e0b; }
+
+    .actions {
+      display: flex; flex-wrap: wrap; gap: 10px;
+      margin-top: 16px; align-items: center;
+    }
+    .btn {
+      font: inherit; font-size: 14px; font-weight: 700;
+      padding: 11px 20px; border-radius: 12px; border: none;
+      cursor: pointer; color: #fff;
+      background: linear-gradient(135deg, #d97706, #f59e0b);
+      box-shadow: 0 8px 20px rgba(217, 119, 6, 0.3);
+      transition: transform .15s, box-shadow .15s, opacity .15s;
+    }
+    .btn:hover { transform: translateY(-1px); box-shadow: 0 10px 24px rgba(217, 119, 6, 0.38); }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+    .btn-ghost {
+      color: #475569; background: #fff;
+      border: 1px solid #e2e8f0; box-shadow: none;
+    }
+    .btn-ghost:hover { border-color: #fcd34d; color: #b45309; box-shadow: none; }
+
+    .meta {
+      margin-top: 12px; font-size: 12px; color: var(--muted);
+      display: flex; flex-wrap: wrap; gap: 8px 14px;
+    }
+    .meta strong { color: var(--ink-2); font-weight: 700; }
+    .status {
+      margin-top: 12px; font-size: 13px; line-height: 1.5;
+      padding: 10px 12px; border-radius: 12px;
+      display: none;
+    }
+    .status.show { display: block; }
+    .status.ok { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+    .status.err { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+
+    .tips {
+      margin-top: 14px; font-size: 12px; color: var(--muted-2); line-height: 1.55;
+    }
+  </style>
+  <script>window.__ROOT__ = {{ root_path()|tojson }};</script>
+</head>
+<body>
+  <div class="bg" aria-hidden="true"></div>
+  <div class="tool-shell">
+  <div class="shell">
+    <div class="nav">
+      <a class="back" href="{{ url_path('/c/coding') }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M19 12H5M11 18l-6-6 6-6"/>
+        </svg>
+        编码工具
+      </a>
+      <span class="chip">编码工具 · Unicode</span>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="icon" aria-hidden="true">文</div>
+        <div>
+          <h1>中文 Unicode 还原</h1>
+          <p>把 <code>\uXXXX</code>、<code>U+XXXX</code>、HTML 实体等转义还原成中文，也可反向编码。</p>
+        </div>
+      </div>
+
+      <div class="mode-tabs" role="tablist">
+        <button type="button" class="mode-tab active" data-mode="decode" role="tab">还原 Decode</button>
+        <button type="button" class="mode-tab" data-mode="encode" role="tab">编码 Encode</button>
+      </div>
+
+      <div class="opts">
+        <label class="field" id="modeField">还原格式
+          <select id="decodeMode">
+            <option value="auto" selected>自动识别</option>
+            <option value="backslash_u">\uXXXX / \UXXXXXXXX</option>
+            <option value="percent_u">%uXXXX</option>
+            <option value="u_plus">U+XXXX</option>
+            <option value="html_entity">HTML 实体</option>
+          </select>
+        </label>
+        <label class="field" id="styleField" style="display:none">编码样式
+          <select id="encodeStyle">
+            <option value="backslash_u" selected>\uXXXX</option>
+            <option value="u_plus">U+XXXX</option>
+            <option value="html_entity">&#x…;</option>
+            <option value="percent_u">%uXXXX</option>
+          </select>
+        </label>
+        <label class="check" id="upperWrap" style="display:none">
+          <input type="checkbox" id="uppercase" />
+          十六进制大写
+        </label>
+      </div>
+
+      <div class="panes">
+        <div class="pane">
+          <div class="pane-label">
+            <span id="inputLabel">含转义的文本</span>
+            <div class="pane-actions">
+              <button type="button" class="mini" id="btnSample">示例</button>
+              <button type="button" class="mini" id="btnClearIn">清空</button>
+            </div>
+          </div>
+          <textarea id="input" placeholder="粘贴 \u4f60\u597d 或 JSON 片段…" spellcheck="false"></textarea>
+          <div class="samples" id="samples">
+            <button type="button" class="sample-chip" data-text="\u4f60\u597d\uff0c\u4e16\u754c">你好，世界</button>
+            <button type="button" class="sample-chip" data-text="{&quot;name&quot;:&quot;\u5f20\u4e09&quot;}">JSON</button>
+            <button type="button" class="sample-chip" data-text="\\u4e2d\\u6587">双重转义</button>
+            <button type="button" class="sample-chip" data-text="U+4E2D U+6587">U+</button>
+            <button type="button" class="sample-chip" data-text="&amp;#x4f60;&amp;#x597d;">HTML</button>
+          </div>
+        </div>
+        <div class="pane">
+          <div class="pane-label">
+            <span id="outputLabel">还原结果</span>
+            <div class="pane-actions">
+              <button type="button" class="mini" id="btnCopy">复制</button>
+              <button type="button" class="mini" id="btnClearOut">清空</button>
+            </div>
+          </div>
+          <textarea id="output" readonly placeholder="结果将显示在这里…" spellcheck="false"></textarea>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button type="button" class="btn" id="btnRun">还原</button>
+        <button type="button" class="btn btn-ghost" id="btnSwap">交换输入/输出</button>
+      </div>
+
+      <div class="meta" id="meta"></div>
+      <div class="status" id="status"></div>
+      <p class="tips">
+        支持 <code>\u4e2d</code>、<code>\u{4e2d}</code>、<code>\\u4e2d</code>（双重转义）、
+        <code>%u4E2D</code>、<code>U+4E2D</code>、<code>&amp;#x4e2d;</code>。
+        按 Ctrl/Cmd + Enter 快速转换。
+      </p>
+    </div>
+  </div>
+  </div>
+
+  <script>
+    const modeTabs = document.querySelectorAll('.mode-tab');
+    const input = document.getElementById('input');
+    const output = document.getElementById('output');
+    const decodeMode = document.getElementById('decodeMode');
+    const encodeStyle = document.getElementById('encodeStyle');
+    const uppercase = document.getElementById('uppercase');
+    const modeField = document.getElementById('modeField');
+    const styleField = document.getElementById('styleField');
+    const upperWrap = document.getElementById('upperWrap');
+    const btnRun = document.getElementById('btnRun');
+    const btnSwap = document.getElementById('btnSwap');
+    const btnCopy = document.getElementById('btnCopy');
+    const btnSample = document.getElementById('btnSample');
+    const btnClearIn = document.getElementById('btnClearIn');
+    const btnClearOut = document.getElementById('btnClearOut');
+    const meta = document.getElementById('meta');
+    const status = document.getElementById('status');
+    const inputLabel = document.getElementById('inputLabel');
+    const outputLabel = document.getElementById('outputLabel');
+    const samples = document.getElementById('samples');
+
+    let mode = 'decode';
+
+    function setStatus(kind, text) {
+      status.className = 'status show ' + kind;
+      status.textContent = text;
+    }
+    function clearStatus() {
+      status.className = 'status';
+      status.textContent = '';
+    }
+
+    function applyMode(next) {
+      mode = next;
+      modeTabs.forEach((t) => {
+        const on = t.getAttribute('data-mode') === mode;
+        t.classList.toggle('active', on);
+      });
+      const isDecode = mode === 'decode';
+      modeField.style.display = isDecode ? '' : 'none';
+      styleField.style.display = isDecode ? 'none' : '';
+      upperWrap.style.display = isDecode ? 'none' : '';
+      samples.style.display = isDecode ? '' : 'none';
+      inputLabel.textContent = isDecode ? '含转义的文本' : '明文';
+      outputLabel.textContent = isDecode ? '还原结果' : 'Unicode 转义';
+      btnRun.textContent = isDecode ? '还原' : '编码';
+      input.placeholder = isDecode
+        ? '粘贴 \\u4f60\\u597d 或 JSON 片段…'
+        : '输入要编码的中文…';
+    }
+
+    modeTabs.forEach((t) => {
+      t.addEventListener('click', () => applyMode(t.getAttribute('data-mode')));
+    });
+
+    btnClearIn.addEventListener('click', () => { input.value = ''; });
+    btnClearOut.addEventListener('click', () => { output.value = ''; meta.innerHTML = ''; });
+
+    btnSample.addEventListener('click', () => {
+      if (mode === 'decode') {
+        input.value = '\\u4f60\\u597d\\uff0c\\u4e16\\u754c\\uff01';
+      } else {
+        input.value = '你好，世界！';
+      }
+      run();
+    });
+
+    samples.addEventListener('click', (e) => {
+      const t = e.target.closest('.sample-chip');
+      if (!t) return;
+      // data-text may contain HTML entities; use getAttribute for raw string
+      const raw = t.getAttribute('data-text') || '';
+      // Browser decodes HTML entities in attributes; restore common ones for demos
+      input.value = raw;
+      if (mode !== 'decode') applyMode('decode');
+      run();
+    });
+
+    btnCopy.addEventListener('click', async () => {
+      const text = output.value;
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        setStatus('ok', '已复制到剪贴板');
+      } catch (e) {
+        output.select();
+        document.execCommand('copy');
+        setStatus('ok', '已复制');
+      }
+    });
+
+    btnSwap.addEventListener('click', () => {
+      const a = input.value;
+      input.value = output.value;
+      output.value = a;
+      applyMode(mode === 'decode' ? 'encode' : 'decode');
+    });
+
+    function showMeta(data) {
+      const parts = [];
+      if (data.replacements != null) parts.push(`替换 <strong>${data.replacements}</strong> 处`);
+      if (data.escaped_chars != null) parts.push(`转义 <strong>${data.escaped_chars}</strong> 字`);
+      if (data.passes != null) parts.push(`轮次 <strong>${data.passes}</strong>`);
+      if (data.input_chars != null) parts.push(`输入 <strong>${data.input_chars}</strong> 字符`);
+      if (data.output_chars != null) parts.push(`输出 <strong>${data.output_chars}</strong> 字符`);
+      if (data.mode) parts.push(`模式 <strong>${data.mode}</strong>`);
+      if (data.style) parts.push(`样式 <strong>${data.style}</strong>`);
+      meta.innerHTML = parts.join(' · ');
+    }
+
+    async function run() {
+      clearStatus();
+      btnRun.disabled = true;
+      try {
+        const fd = new FormData();
+        fd.append('text', input.value);
+        let url;
+        if (mode === 'decode') {
+          fd.append('mode', decodeMode.value);
+          fd.append('max_passes', '3');
+          url = (window.__ROOT__ || '') + '/tools/unicode/decode';
+        } else {
+          fd.append('style', encodeStyle.value);
+          fd.append('uppercase', uppercase.checked ? 'true' : 'false');
+          url = (window.__ROOT__ || '') + '/tools/unicode/encode';
+        }
+        const res = await fetch(url, { method: 'POST', body: fd });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const detail = data.detail;
+          const msg = typeof detail === 'string'
+            ? detail
+            : (Array.isArray(detail) ? detail.map(d => d.msg || d).join('; ') : (detail || `HTTP ${res.status}`));
+          throw new Error(msg);
+        }
+        output.value = data.result != null ? data.result : '';
+        setStatus('ok', mode === 'decode'
+          ? (data.changed ? '还原完成' : '未发现可还原的转义')
+          : '编码完成');
+        showMeta(data);
+      } catch (err) {
+        setStatus('err', err.message || String(err));
+      } finally {
+        btnRun.disabled = false;
+      }
+    }
+
+    btnRun.addEventListener('click', run);
+    input.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        run();
+      }
+    });
+  </script>
+</body>
+</html>
