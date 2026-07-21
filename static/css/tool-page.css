@@ -569,3 +569,555 @@ body.tool-page > .bg {
   font-size: 12.5px;
   max-width: 100%;
 }
+
+
+/* ==========================================================================
+   Shared upload / convert chrome (drop zone, file list, progress, #status)
+   Uses --tool-accent* ; --c aliases keep any residual page CSS working.
+   ========================================================================== */
+
+.tool-page,
+body.tool-page {
+  --c: var(--tool-accent);
+  --c2: var(--tool-accent-2);
+  --c-soft: var(--tool-accent-soft);
+  --c-border: var(--tool-accent-border);
+}
+
+/* Accent-tinted page backgrounds */
+.tool-page[data-accent="indigo"] .bg,
+body.tool-page[data-accent="indigo"] > .bg {
+  background:
+    radial-gradient(ellipse 80% 55% at 12% 8%, rgba(99, 102, 241, 0.28), transparent 55%),
+    radial-gradient(ellipse 60% 45% at 92% 12%, rgba(139, 92, 246, 0.14), transparent 50%),
+    radial-gradient(ellipse 50% 40% at 50% 100%, rgba(99, 102, 241, 0.08), transparent 55%),
+    linear-gradient(165deg, #f0f4ff 0%, #eef2f7 45%, #f5f7fb 100%);
+}
+
+.tool-page[data-accent="emerald"] .bg,
+body.tool-page[data-accent="emerald"] > .bg {
+  background:
+    radial-gradient(ellipse 80% 55% at 12% 8%, rgba(16, 185, 129, 0.2), transparent 55%),
+    radial-gradient(ellipse 60% 45% at 92% 12%, rgba(52, 211, 153, 0.12), transparent 50%),
+    linear-gradient(165deg, #ecfdf5 0%, #eef2f7 45%, #f5f7fb 100%);
+}
+
+.tool-page[data-accent="violet"] .bg,
+body.tool-page[data-accent="violet"] > .bg {
+  background:
+    radial-gradient(ellipse 70% 50% at 15% 8%, rgba(124, 58, 237, 0.18), transparent 55%),
+    radial-gradient(ellipse 55% 40% at 90% 10%, rgba(99, 102, 241, 0.12), transparent 50%),
+    linear-gradient(165deg, #f5f3ff 0%, #eef2f7 45%, #f5f7fb 100%);
+}
+
+.tool-page .bg::before,
+body.tool-page > .bg::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.4) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.4) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 70% 55% at 50% 35%, black 15%, transparent 75%);
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.tool-page .features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -2px 0 18px;
+}
+
+.tool-page .feat {
+  font-size: 11px;
+  font-weight: 600;
+  color: #475569;
+  background: #f8fafc;
+  border: 1px solid #eef2f7;
+  padding: 4px 9px;
+  border-radius: 8px;
+}
+
+/* Drop / pick zone */
+.tool-page .drop {
+  display: block;
+  width: 100%;
+  cursor: pointer;
+  border: 2px dashed var(--tool-accent-border);
+  border-radius: 16px;
+  padding: 28px 18px;
+  text-align: center;
+  background: linear-gradient(180deg, #fafbff 0%, #f5f7ff 100%);
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.tool-page .drop:hover,
+.tool-page .drop.drag {
+  border-color: var(--tool-accent);
+  background: var(--tool-accent-soft);
+  box-shadow: 0 0 0 4px var(--tool-focus);
+}
+
+.tool-page .drop.disabled,
+.tool-page .drop:has(input:disabled) {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.tool-page .drop-icon {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 12px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: #fff;
+  border: 1px solid var(--tool-accent-border);
+  color: var(--tool-accent);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(15, 23, 42, 0.06));
+}
+
+.tool-page .drop-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.tool-page .drop-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-2, #1e293b);
+}
+
+.tool-page .drop-title strong {
+  color: var(--tool-accent);
+}
+
+.tool-page .drop-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted-2, #94a3b8);
+}
+
+.tool-page .drop > input[type="file"] {
+  display: none;
+}
+
+.tool-page .file-list {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 168px;
+  overflow: auto;
+}
+
+.tool-page .file-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--ink-2, #1e293b);
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  background: #f8fafc;
+  border: 1px solid #eef2f7;
+  border-radius: 12px;
+}
+
+.tool-page .file-list .fi {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  background: var(--tool-accent-soft);
+  color: var(--tool-accent);
+}
+
+.tool-page .file-list .fname {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.tool-page .file-list .fsize {
+  color: var(--muted-2, #94a3b8);
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
+.tool-page .file-list button {
+  border: 0;
+  background: transparent;
+  color: var(--muted-2, #94a3b8);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 8px;
+}
+
+.tool-page .file-list button:hover {
+  color: #dc2626;
+  background: #fef2f2;
+}
+
+/* Boxed options panel (upload tools with .opts-title) */
+.tool-page .opts:has(.opts-title) {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+  margin-bottom: 0;
+  align-items: stretch;
+  min-height: 0;
+  padding: 16px;
+  background: #f8fafc;
+  border: 1px solid #eef2f7;
+  border-radius: 16px;
+}
+
+.tool-page .opts-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-2, #94a3b8);
+}
+
+.tool-page .opts:has(.opts-title) .hint {
+  color: var(--muted-2, #94a3b8);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.tool-page .opts:has(.opts-title) .check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2, #1e293b);
+  cursor: pointer;
+  padding-bottom: 0;
+}
+
+/* Full-width primary action used by convert tools */
+.tool-page #btn {
+  width: 100%;
+  margin-top: 18px;
+  padding: 13px 16px;
+  border: 0;
+  border-radius: 14px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  color: #fff;
+  background: linear-gradient(135deg, var(--tool-accent) 0%, var(--tool-accent-2) 100%);
+  box-shadow: var(--tool-btn-shadow);
+  transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+}
+
+.tool-page #btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--tool-btn-shadow-hover);
+}
+
+.tool-page #btn:disabled {
+  background: #e2e8f0;
+  color: #94a3b8;
+  box-shadow: none;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.tool-page .progress {
+  display: none;
+  margin-top: 14px;
+  height: 7px;
+  background: #eef2f7;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.tool-page .progress.show {
+  display: block;
+}
+
+.tool-page .progress > i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--tool-accent), var(--tool-accent-2), var(--tool-bar-end));
+  border-radius: 999px;
+  transition: width 0.15s ease;
+}
+
+/* Inline status used by upload tools (#status) */
+.tool-page #status {
+  margin-top: 14px;
+  font-size: 13px;
+  min-height: 20px;
+  line-height: 1.55;
+  font-weight: 500;
+}
+
+.tool-page #status:not(:empty) {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #eef2f7;
+}
+
+.tool-page #status.err {
+  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.tool-page #status.ok {
+  color: #15803d;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.tool-page #status.info {
+  color: #334155;
+}
+
+.tool-page #status.warn {
+  color: #b45309;
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+/* Engine banner (word2pdf) */
+.tool-page .engine {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: 14px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  font-weight: 500;
+}
+
+.tool-page .engine .ei {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.tool-page .engine.ok {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #065f46;
+}
+
+.tool-page .engine.ok .ei {
+  background: #d1fae5;
+  color: #047857;
+}
+
+.tool-page .engine.bad {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+}
+
+.tool-page .engine.bad .ei {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.tool-page .engine a {
+  color: inherit;
+  font-weight: 700;
+}
+
+.tool-page .engine code {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.65);
+}
+
+/* Image preview (compress / convert) */
+.tool-page .preview-wrap {
+  display: none;
+  margin-top: 14px;
+  border: 1px solid #eef2f7;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #f8fafc;
+}
+
+.tool-page .preview-wrap.show {
+  display: block;
+}
+
+.tool-page .preview-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #eef2f7;
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.tool-page .preview-bar .meta {
+  color: var(--muted-2, #94a3b8);
+  font-weight: 500;
+  margin-top: 0;
+}
+
+.tool-page .preview-stage {
+  display: grid;
+  place-items: center;
+  min-height: 160px;
+  max-height: 280px;
+  padding: 12px;
+  background:
+    linear-gradient(45deg, #e2e8f0 25%, transparent 25%),
+    linear-gradient(-45deg, #e2e8f0 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #e2e8f0 75%),
+    linear-gradient(-45deg, transparent 75%, #e2e8f0 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-color: #f1f5f9;
+}
+
+.tool-page .preview-stage img {
+  max-width: 100%;
+  max-height: 250px;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12);
+}
+
+.tool-page .stats {
+  display: none;
+  margin-top: 12px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.tool-page .stats.show {
+  display: grid;
+}
+
+@media (max-width: 520px) {
+  .tool-page .stats {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tool-page .stat {
+  padding: 12px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #eef2f7;
+}
+
+.tool-page .stat .k {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted-2, #94a3b8);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 4px;
+}
+
+.tool-page .stat .v {
+  font-size: 15px;
+  font-weight: 750;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.tool-page .stat .v.good {
+  color: #15803d;
+}
+
+/* Quality cards (image-compress) */
+.tool-page .quality-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+@media (max-width: 560px) {
+  .tool-page .quality-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tool-page .q-card {
+  position: relative;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px 12px 10px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.tool-page .q-card:hover {
+  border-color: var(--tool-accent-border);
+}
+
+.tool-page .q-card.active {
+  border-color: var(--tool-accent);
+  background: var(--tool-accent-soft);
+  box-shadow: 0 0 0 3px var(--tool-focus);
+}
+
+.tool-page .q-card input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.tool-page .q-card .ql {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 3px;
+}
+
+.tool-page .q-card .qh {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+  font-weight: 500;
+}
+
+@media (max-width: 480px) {
+  .tool-page .card {
+    padding: 20px 16px 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-page #btn {
+    transition: none;
+  }
+}

@@ -1,0 +1,2 @@
+{# Sets window.__ROOT__ for client-side URL building under reverse-proxy mounts. #}
+<script>window.__ROOT__ = {{ root_path()|tojson }};</script>

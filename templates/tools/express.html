@@ -1,95 +1,32 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="文件快递 — 上传文件生成取件码，对方输入取件码即可下载" />
-  <title>文件快递 — 工具集</title>
-  <link rel="stylesheet" href="{{ static_url('/static/css/tokens.css') }}" />
-  <link rel="stylesheet" href="{{ static_url('/static/css/layout.css') }}" />
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: var(--font);
-      color: var(--ink);
-      min-height: 100vh;
-      background: var(--bg);
-    }
-    .bg {
-      position: fixed; inset: 0; z-index: 0; pointer-events: none;
-      background:
-        radial-gradient(ellipse 70% 50% at 12% 6%, rgba(99, 102, 241, 0.16), transparent 55%),
-        radial-gradient(ellipse 50% 40% at 92% 12%, rgba(14, 165, 233, 0.12), transparent 50%),
-        linear-gradient(165deg, #eef2ff 0%, #eef1f8 45%, #f5f7fb 100%);
-    }
-    .shell { position: relative; z-index: 1; width: 100%; }
-    .nav {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 14px; gap: 12px;
-    }
-    .back {
-      display: inline-flex; align-items: center; gap: 6px;
-      font-size: 13px; font-weight: 600; color: var(--muted);
-      text-decoration: none; padding: 8px 12px;
-      background: var(--surface); border: 1px solid var(--line);
-      border-radius: 999px; backdrop-filter: blur(10px);
-      transition: color .15s, border-color .15s, background .15s;
-    }
-    .back:hover { color: #4f46e5; border-color: #c7d2fe; background: #fff; }
-    .back svg { width: 15px; height: 15px; }
-    .chip {
-      font-size: 11px; font-weight: 700; color: #4338ca;
-      background: #eef2ff; border: 1px solid #c7d2fe;
-      padding: 6px 11px; border-radius: 999px;
-    }
-    .card {
-      background: #fff;
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      padding: 22px 22px 20px;
-      overflow: hidden;
-      position: relative;
-    }
-    .card::before {
-      content: "";
-      position: absolute; left: 0; right: 0; top: 0; height: 3px;
-      background: linear-gradient(90deg, #4f46e5, #0ea5e9, #06b6d4);
-    }
-    .card-head {
-      display: flex; gap: 14px; align-items: flex-start;
-      margin-bottom: 16px;
-    }
-    .icon {
-      width: 48px; height: 48px; border-radius: 14px;
-      display: grid; place-items: center; font-size: 22px; flex-shrink: 0;
-      background: linear-gradient(145deg, #818cf8, #4f46e5);
-      box-shadow: 0 10px 22px rgba(79, 70, 229, 0.28);
-    }
-    .card-head h1 {
-      font-size: 1.25rem; font-weight: 750; letter-spacing: -0.02em;
-      margin-bottom: 4px;
-    }
-    .card-head p { font-size: 13px; color: var(--muted); line-height: 1.55; }
+{% extends "tools/base.html" %}
+{% set page_title = "文件快递" %}
+{% set page_description = "文件快递 — 上传取码，对方输入即可下载" %}
+{% set accent = "indigo" %}
+{% set use_tool_page_css = true %}
+{% set use_upload_js = false %}
+{% set back_href = url_path("/") %}
+{% set back_label = "首页" %}
+{% set chip = "特色 · 文件快递" %}
 
-    .tabs {
+{% block head_styles %}
+<style>
+.tool-page .tabs{
       display: flex; gap: 6px; padding: 4px;
       background: #f1f5f9; border-radius: 12px; margin-bottom: 18px;
     }
-    .tab {
+.tool-page .tab{
       flex: 1; border: 0; background: transparent; cursor: pointer;
       font: inherit; font-size: 13.5px; font-weight: 700;
       color: #64748b; padding: 10px 12px; border-radius: 10px;
       transition: background .15s, color .15s, box-shadow .15s;
     }
-    .tab.active {
+.tool-page .tab.active{
       background: #fff; color: #3730a3;
       box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
     }
-    .pane { display: none; }
-    .pane.active { display: block; }
-
-    .drop {
+.tool-page .pane{ display: none; }
+.tool-page .pane.active{ display: block; }
+.tool-page .drop{
       border: 1.5px dashed #c7d2fe;
       border-radius: 14px;
       background: #f8faff;
@@ -99,30 +36,31 @@
       transition: border-color .15s, background .15s;
       margin-bottom: 14px;
     }
-    .drop:hover, .drop.drag {
+.tool-page .drop:hover, .tool-page .drop.drag{
       border-color: #818cf8;
       background: #eef2ff;
     }
-    .drop strong { display: block; font-size: 14px; margin-bottom: 4px; }
-    .drop span { font-size: 12px; color: var(--muted); }
-    .drop input { display: none; }
-    .file-name {
+.tool-page .drop strong{ display: block; font-size: 14px; margin-bottom: 4px; }
+.tool-page .drop span{ font-size: 12px; color: var(--muted); }
+.tool-page .drop input{ display: none; }
+.tool-page .file-name{
       margin-top: 10px; font-size: 12.5px; font-weight: 650;
       color: #4f46e5; word-break: break-all;
     }
-
-    .row {
+.tool-page .row{
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 12px;
       margin-bottom: 12px;
     }
-    @media (max-width: 560px) { .row { grid-template-columns: 1fr; } }
-    .field label {
+@media (max-width: 560px)  {
+.tool-page .row{ grid-template-columns: 1fr; }
+}
+.tool-page .field label{
       display: block; font-size: 12px; font-weight: 700;
       color: #475569; margin-bottom: 6px;
     }
-    .field input, .field select, .field textarea {
+.tool-page .field input, .tool-page .field select, .tool-page .field textarea{
       width: 100%;
       border: 1px solid var(--line);
       border-radius: 10px;
@@ -134,14 +72,13 @@
       outline: none;
       transition: border-color .15s, box-shadow .15s;
     }
-    .field input:focus, .field select:focus, .field textarea:focus {
+.tool-page .field input:focus, .tool-page .field select:focus, .tool-page .field textarea:focus{
       border-color: #a5b4fc;
       box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
     }
-    .field .hint { font-size: 11.5px; color: var(--muted); margin-top: 5px; }
-    .field textarea { resize: vertical; min-height: 64px; }
-
-    .code-input {
+.tool-page .field .hint{ font-size: 11.5px; color: var(--muted); margin-top: 5px; }
+.tool-page .field textarea{ resize: vertical; min-height: 64px; }
+.tool-page .code-input{
       font-family: var(--mono);
       font-size: 1.5rem !important;
       font-weight: 700;
@@ -149,11 +86,10 @@
       text-align: center;
       padding: 14px 12px !important;
     }
-
-    .actions {
+.tool-page .actions{
       display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px;
     }
-    .btn {
+.tool-page .btn{
       display: inline-flex; align-items: center; justify-content: center; gap: 6px;
       border: 1px solid var(--line);
       background: #fff;
@@ -163,21 +99,20 @@
       cursor: pointer;
       transition: background .15s, border-color .15s, color .15s, box-shadow .15s;
     }
-    .btn:hover { border-color: #c7d2fe; color: #4f46e5; background: #f8f9ff; }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .btn-primary {
+.tool-page .btn:hover{ border-color: #c7d2fe; color: #4f46e5; background: #f8f9ff; }
+.tool-page .btn:disabled{ opacity: 0.5; cursor: not-allowed; }
+.tool-page .btn-primary{
       background: linear-gradient(135deg, #6366f1, #4f46e5);
       border-color: transparent;
       color: #fff;
       box-shadow: 0 8px 18px rgba(79, 70, 229, 0.28);
     }
-    .btn-primary:hover {
+.tool-page .btn-primary:hover{
       background: linear-gradient(135deg, #4f46e5, #4338ca);
       color: #fff;
       border-color: transparent;
     }
-
-    .msg {
+.tool-page .msg{
       margin-top: 14px;
       padding: 12px 14px;
       border-radius: 12px;
@@ -185,12 +120,11 @@
       line-height: 1.5;
       display: none;
     }
-    .msg.show { display: block; }
-    .msg.ok { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
-    .msg.err { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
-    .msg.info { background: #eef2ff; color: #3730a3; border: 1px solid #c7d2fe; }
-
-    .result {
+.tool-page .msg.show{ display: block; }
+.tool-page .msg.ok{ background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+.tool-page .msg.err{ background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+.tool-page .msg.info{ background: #eef2ff; color: #3730a3; border: 1px solid #c7d2fe; }
+.tool-page .result{
       margin-top: 14px;
       padding: 16px;
       border-radius: 14px;
@@ -198,8 +132,8 @@
       border: 1px solid #c7d2fe;
       display: none;
     }
-    .result.show { display: block; }
-    .result-code {
+.tool-page .result.show{ display: block; }
+.tool-page .result-code{
       font-family: var(--mono);
       font-size: 2rem;
       font-weight: 800;
@@ -208,37 +142,27 @@
       text-align: center;
       margin: 6px 0 10px;
     }
-    .result-meta {
+.tool-page .result-meta{
       font-size: 12.5px;
       color: #475569;
       line-height: 1.6;
       text-align: center;
     }
-    .result-actions {
+.tool-page .result-actions{
       display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
       margin-top: 12px;
     }
-
-    .tips {
+.tool-page .tips{
       margin-top: 16px;
       font-size: 12px;
       color: var(--muted);
       line-height: 1.55;
     }
-    .tips strong { color: #475569; }
-  </style>
-</head>
-<body>
-  <div class="bg" aria-hidden="true"></div>
-  <div class="shell site-page">
-    <div class="nav">
-      <a class="back" href="{{ url_path('/') }}">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>
-        返回首页
-      </a>
-      <span class="chip">取件码 · 临时分享</span>
-    </div>
+.tool-page .tips strong{ color: #475569; }
+</style>
+{% endblock %}
 
+{% block content %}
     <div class="card">
       <div class="card-head">
         <div class="icon" aria-hidden="true">📦</div>
@@ -326,10 +250,11 @@
         取件码过期后用户侧无法再下载；管理端长期保留记录，仅管理员可删除。
         请勿上传敏感机密文件到不可信环境；生产环境建议配合 HTTPS 与访问限流。
       </p>
-    </div>
-  </div>
+</div>
+{% endblock %}
 
-  <script>
+{% block scripts %}
+<script>
     (function () {
       var ROOT = (window.__ROOT__ || {{ root_path()|tojson }}) || '';
       function api(path) {
@@ -598,5 +523,4 @@
       });
     })();
   </script>
-</body>
-</html>
+{% endblock %}

@@ -204,6 +204,7 @@ TOOL_ROUTERS = (
     code_format_router,
     json_legacy_router,
     markdown_router,
+    unicode_router,
     rmb_router,
     image_compress_router,
     image_convert_router,

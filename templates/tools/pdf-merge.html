@@ -1,117 +1,31 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="发票合并 — 两张发票合并到一张 A4 纸，页内预览与打印" />
-  <title>发票合并 — 工具箱</title>
-  <link rel="stylesheet" href="{{ static_url('/static/css/tokens.css') }}" />
-  <link rel="stylesheet" href="{{ static_url('/static/css/layout.css') }}" />
-  <style>
-    :root {
-      --c: #7c3aed;
-      --c2: #8b5cf6;
-      --c-soft: #f5f3ff;
-      --c-border: #ddd6fe;
-      --panel: #f8fafc;
-      --panel-line: #eef2f7;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: var(--font);
-      color: var(--ink);
-      min-height: 100vh;
-      background: var(--bg);
-    }
-    .bg {
-      position: fixed; inset: 0; z-index: 0; pointer-events: none;
-      background:
-        radial-gradient(ellipse 70% 50% at 12% 8%, rgba(139, 92, 246, 0.2), transparent 55%),
-        radial-gradient(ellipse 55% 40% at 92% 10%, rgba(99, 102, 241, 0.1), transparent 50%),
-        linear-gradient(165deg, #f5f3ff 0%, #eef2f7 45%, #f5f7fb 100%);
-    }
+{% extends "tools/base.html" %}
+{% set page_title = "发票合并" %}
+{% set page_description = "两张发票合并到一张 A4" %}
+{% set accent = "violet" %}
+{% set use_tool_page_css = true %}
+{% set use_upload_js = true %}
+{% set back_href = url_path("/c/office") %}
+{% set back_label = "办公工具" %}
+{% set chip = "办公工具 · 发票合并" %}
 
-    .shell { position: relative; z-index: 1; width: 100%; }
-    .nav {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 14px; gap: 12px;
-    }
-    .back {
-      display: inline-flex; align-items: center; gap: 6px;
-      font-size: 13px; font-weight: 600; color: var(--muted);
-      text-decoration: none; padding: 8px 12px;
-      background: var(--surface); border: 1px solid var(--line);
-      border-radius: 999px; backdrop-filter: blur(10px);
-      transition: color .15s, border-color .15s, background .15s;
-    }
-    .back:hover { color: var(--c); border-color: var(--c-border); background: #fff; }
-    .back svg { width: 15px; height: 15px; }
-    .chip {
-      font-size: 11px; font-weight: 700; color: var(--c);
-      background: var(--c-soft); border: 1px solid var(--c-border);
-      padding: 6px 11px; border-radius: 999px;
-    }
-
-    /* One card: header + split body */
-    .card {
-      background: #fff;
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      overflow: hidden;
-      position: relative;
-    }
-    .card::before {
-      content: "";
-      position: absolute; left: 0; right: 0; top: 0; height: 3px;
-      background: linear-gradient(90deg, var(--c), var(--c2), #a78bfa);
-      z-index: 1;
-    }
-
-    .card-head {
-      display: flex; gap: 14px; align-items: flex-start;
-      padding: 22px 24px 16px;
-      border-bottom: 1px solid var(--panel-line);
-    }
-    .icon {
-      width: 48px; height: 48px; border-radius: 14px; flex-shrink: 0;
-      display: grid; place-items: center; font-size: 22px;
-      background: linear-gradient(145deg, var(--c2), var(--c));
-      box-shadow: 0 10px 22px rgba(124, 58, 237, 0.3),
-        inset 0 1px 0 rgba(255,255,255,0.28);
-    }
-    .card-head h1 {
-      font-size: 1.25rem; font-weight: 750; letter-spacing: -0.02em;
-      color: var(--ink); margin-bottom: 4px; line-height: 1.2;
-    }
-    .card-head p {
-      font-size: 13px; line-height: 1.55; color: var(--muted);
-      max-width: 52em;
-    }
-    .head-feats {
+{% block head_styles %}
+<style>
+.tool-page .head-feats{
       display: flex; flex-wrap: wrap; gap: 6px;
       margin-top: 10px;
     }
-    .feat {
-      font-size: 11px; font-weight: 600; color: #64748b;
-      background: var(--panel); border: 1px solid var(--panel-line);
-      padding: 3px 8px; border-radius: 999px;
-    }
-
-    .split {
+.tool-page .split{
       display: grid;
       grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
       min-height: 560px;
     }
-    @media (max-width: 860px) {
-      .split {
+@media (max-width: 860px)  {
+.tool-page .split{
         grid-template-columns: 1fr;
         min-height: 0;
       }
-    }
-
-    /* —— Left controls —— */
-    .controls {
+}
+.tool-page .controls{
       display: flex;
       flex-direction: column;
       gap: 14px;
@@ -119,14 +33,13 @@
       border-right: 1px solid var(--panel-line);
       background: linear-gradient(180deg, #fafbff 0%, #fff 48%);
     }
-    @media (max-width: 860px) {
-      .controls {
+@media (max-width: 860px)  {
+.tool-page .controls{
         border-right: 0;
         border-bottom: 1px solid var(--panel-line);
       }
-    }
-
-    .drop {
+}
+.tool-page .drop{
       display: block; width: 100%; cursor: pointer;
       border: 1.5px dashed var(--c-border);
       border-radius: 14px; padding: 22px 14px;
@@ -134,29 +47,27 @@
       background: #fff;
       transition: border-color .15s, background .15s, box-shadow .15s;
     }
-    .drop:hover, .drop.drag {
+.tool-page .drop:hover, .tool-page .drop.drag{
       border-color: var(--c);
       background: var(--c-soft);
       box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.08);
     }
-    .drop-icon {
+.tool-page .drop-icon{
       width: 40px; height: 40px; margin: 0 auto 10px;
       border-radius: 12px; display: grid; place-items: center;
       background: var(--c-soft); border: 1px solid var(--c-border);
       color: var(--c);
     }
-    .drop-icon svg { width: 18px; height: 18px; }
-    .drop-title { font-size: 13px; font-weight: 650; color: var(--ink-2); }
-    .drop-title strong { color: var(--c); }
-    .drop-hint { margin-top: 5px; font-size: 11.5px; color: var(--muted-2); line-height: 1.45; }
-    input[type=file] { display: none; }
-
-    .file-list {
+.tool-page .drop-icon svg{ width: 18px; height: 18px; }
+.tool-page .drop-title{ font-size: 13px; font-weight: 650; color: var(--ink-2); }
+.tool-page .drop-title strong{ color: var(--c); }
+.tool-page .drop-hint{ margin-top: 5px; font-size: 11.5px; color: var(--muted-2); line-height: 1.45; }
+.tool-page .file-list{
       margin: 0; padding: 0; list-style: none;
       display: grid; gap: 6px;
     }
-    .file-list:empty { display: none; }
-    .file-list li {
+.tool-page .file-list:empty{ display: none; }
+.tool-page .file-list li{
       display: flex; align-items: center; gap: 8px;
       font-size: 12px; color: var(--ink-2);
       padding: 9px 10px;
@@ -164,24 +75,23 @@
       border: 1px solid var(--panel-line);
       border-radius: 12px;
     }
-    .file-list .fslot {
+.tool-page .file-list .fslot{
       font-size: 10px; font-weight: 700; color: var(--c);
       background: var(--c-soft); border: 1px solid var(--c-border);
       padding: 2px 6px; border-radius: 6px; flex-shrink: 0;
     }
-    .file-list .fname {
+.tool-page .file-list .fname{
       flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       font-weight: 600;
     }
-    .file-list .fsize { color: var(--muted-2); flex-shrink: 0; font-size: 11px; }
-    .file-list button {
+.tool-page .file-list .fsize{ color: var(--muted-2); flex-shrink: 0; font-size: 11px; }
+.tool-page .file-list button{
       border: 0; background: transparent; color: var(--muted-2);
       font-size: 12px; font-weight: 600; cursor: pointer;
       padding: 3px 6px; border-radius: 6px; flex-shrink: 0;
     }
-    .file-list button:hover { color: #dc2626; background: #fef2f2; }
-
-    .opts {
+.tool-page .file-list button:hover{ color: #dc2626; background: #fef2f2; }
+.tool-page .opts{
       display: flex;
       align-items: flex-start;
       gap: 10px;
@@ -190,72 +100,28 @@
       border: 1px solid var(--panel-line);
       border-radius: 12px;
     }
-    .opts .check {
+.tool-page .opts .check{
       display: flex; align-items: flex-start; gap: 9px;
       font-size: 12.5px; font-weight: 600; color: var(--ink-2);
       cursor: pointer; line-height: 1.45;
     }
-    .opts .check input {
+.tool-page .opts .check input{
       width: 15px; height: 15px; margin-top: 1px;
       accent-color: var(--c); cursor: pointer; flex-shrink: 0;
     }
-    .opts .check span { color: var(--muted); font-weight: 500; }
-    .opts .check strong { color: var(--ink-2); font-weight: 650; }
-
-    #btn {
-      width: 100%; margin-top: auto; padding: 12px 14px; border: 0;
-      border-radius: 12px; font-size: 14px; font-weight: 700; cursor: pointer;
-      color: #fff;
-      background: linear-gradient(135deg, var(--c) 0%, var(--c2) 100%);
-      box-shadow: 0 8px 18px rgba(124, 58, 237, 0.28);
-      transition: transform .15s, box-shadow .15s, opacity .15s;
-    }
-    #btn:hover:not(:disabled) {
-      transform: translateY(-1px);
-      box-shadow: 0 10px 22px rgba(124, 58, 237, 0.36);
-    }
-    #btn:disabled {
-      background: #e2e8f0; color: #94a3b8; box-shadow: none;
-      cursor: not-allowed; transform: none;
-    }
-
-    .progress {
-      display: none; height: 5px;
-      background: var(--panel-line); border-radius: 999px; overflow: hidden;
-    }
-    .progress.show { display: block; }
-    .progress > i {
-      display: block; height: 100%; width: 0%;
-      background: linear-gradient(90deg, var(--c), var(--c2));
-      border-radius: 999px; transition: width .15s ease;
-    }
-
-    #status {
-      font-size: 12.5px; line-height: 1.5; font-weight: 500;
-      min-height: 0;
-    }
-    #status:not(:empty) {
-      padding: 9px 11px; border-radius: 10px;
-      background: var(--panel); border: 1px solid var(--panel-line);
-    }
-    #status.err { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
-    #status.ok { color: #15803d; background: #f0fdf4; border-color: #bbf7d0; }
-    #status.info { color: #334155; }
-    #status.warn { color: #b45309; background: #fffbeb; border-color: #fde68a; }
-
-    /* —— Right preview —— */
-    .preview {
+.tool-page .opts .check span{ color: var(--muted); font-weight: 500; }
+.tool-page .opts .check strong{ color: var(--ink-2); font-weight: 650; }
+.tool-page .preview{
       display: flex;
       flex-direction: column;
       min-width: 0;
       min-height: 560px;
       background: #f1f5f9;
     }
-    @media (max-width: 860px) {
-      .preview { min-height: 480px; }
-    }
-
-    .preview-bar {
+@media (max-width: 860px)  {
+.tool-page .preview{ min-height: 480px; }
+}
+.tool-page .preview-bar{
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -265,31 +131,30 @@
       background: #fff;
       border-bottom: 1px solid var(--panel-line);
     }
-    .preview-meta {
+.tool-page .preview-meta{
       display: flex; align-items: center; gap: 8px;
       min-width: 0;
     }
-    .preview-meta .dot {
+.tool-page .preview-meta .dot{
       width: 8px; height: 8px; border-radius: 50%;
       background: #cbd5e1; flex-shrink: 0;
     }
-    .preview-meta.ready .dot {
+.tool-page .preview-meta.ready .dot{
       background: #22c55e;
       box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
     }
-    .preview-meta .label {
+.tool-page .preview-meta .label{
       font-size: 13px; font-weight: 700; color: var(--ink-2);
       white-space: nowrap;
     }
-    .preview-meta .sub {
+.tool-page .preview-meta .sub{
       font-size: 12px; color: var(--muted-2);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-
-    .preview-actions {
+.tool-page .preview-actions{
       display: flex; gap: 8px; flex-wrap: wrap;
     }
-    .preview-actions button {
+.tool-page .preview-actions button{
       display: inline-flex; align-items: center; gap: 6px;
       border: 1px solid #e2e8f0;
       background: #fff;
@@ -299,31 +164,30 @@
       cursor: pointer;
       transition: border-color .15s, background .15s, color .15s, box-shadow .15s;
     }
-    .preview-actions button svg { width: 14px; height: 14px; }
-    .preview-actions button:hover:not(:disabled) {
+.tool-page .preview-actions button svg{ width: 14px; height: 14px; }
+.tool-page .preview-actions button:hover:not(:disabled){
       border-color: var(--c-border);
       color: var(--c);
       background: var(--c-soft);
     }
-    .preview-actions button:disabled {
+.tool-page .preview-actions button:disabled{
       opacity: 0.4; cursor: not-allowed;
     }
-    .preview-actions button.primary {
+.tool-page .preview-actions button.primary{
       border: 0; color: #fff;
       background: linear-gradient(135deg, var(--c), var(--c2));
       box-shadow: 0 4px 12px rgba(124, 58, 237, 0.25);
     }
-    .preview-actions button.primary:hover:not(:disabled) {
+.tool-page .preview-actions button.primary:hover:not(:disabled){
       color: #fff;
       background: linear-gradient(135deg, var(--c), var(--c2));
       box-shadow: 0 6px 16px rgba(124, 58, 237, 0.32);
     }
-    .preview-actions button.primary:disabled {
+.tool-page .preview-actions button.primary:disabled{
       background: #e2e8f0; color: #94a3b8;
       box-shadow: none; opacity: 1;
     }
-
-    .preview-stage {
+.tool-page .preview-stage{
       position: relative;
       flex: 1;
       min-height: 0;
@@ -332,8 +196,7 @@
       justify-content: center;
       padding: 14px;
     }
-
-    .preview-empty {
+.tool-page .preview-empty{
       margin: auto;
       max-width: 280px;
       text-align: center;
@@ -342,7 +205,7 @@
       font-size: 13px;
       line-height: 1.6;
     }
-    .preview-empty .empty-icon {
+.tool-page .preview-empty .empty-icon{
       width: 52px; height: 52px; margin: 0 auto 12px;
       border-radius: 16px;
       display: grid; place-items: center;
@@ -351,17 +214,16 @@
       color: #a78bfa;
       box-shadow: var(--shadow-sm);
     }
-    .preview-empty .empty-icon svg { width: 24px; height: 24px; }
-    .preview-empty strong {
+.tool-page .preview-empty .empty-icon svg{ width: 24px; height: 24px; }
+.tool-page .preview-empty strong{
       display: block;
       color: var(--ink-2);
       font-size: 14px;
       font-weight: 700;
       margin-bottom: 6px;
     }
-    .preview-empty.hidden { display: none; }
-
-    .preview-frame-wrap {
+.tool-page .preview-empty.hidden{ display: none; }
+.tool-page .preview-frame-wrap{
       flex: 1;
       min-height: 420px;
       border-radius: 10px;
@@ -370,9 +232,8 @@
       border: 1px solid #e2e8f0;
       box-shadow: 0 8px 28px rgba(15, 23, 42, 0.08);
     }
-    .preview-frame-wrap.hidden { display: none; }
-
-    #previewFrame {
+.tool-page .preview-frame-wrap.hidden{ display: none; }
+.tool-page #previewFrame{
       display: block;
       width: 100%;
       height: 100%;
@@ -380,52 +241,28 @@
       border: 0;
       background: #525659;
     }
-
-    @media (max-width: 480px) {
-      .card-head { padding: 18px 16px 14px; }
-      .controls { padding: 14px; }
-      .preview-stage { padding: 10px; }
-      .preview, .split { min-height: 0; }
-      .preview { min-height: 400px; }
-      #previewFrame, .preview-frame-wrap { min-height: 360px; }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      #btn { transition: none; }
-    }
-
-    @media print {
-      .bg, .nav, .controls, .preview-bar, .card::before { display: none !important; }
-      body { background: #fff; }
-      .card { box-shadow: none; border: 0; border-radius: 0; }
-      .split { display: block; min-height: 0; }
-      .preview { background: #fff; min-height: 100vh; }
-      .preview-stage { padding: 0; }
-      .preview-frame-wrap {
+@media (max-width: 480px)  {
+.tool-page .controls{ padding: 14px; }
+.tool-page .preview-stage{ padding: 10px; }
+.tool-page .preview, .tool-page .split{ min-height: 0; }
+.tool-page .preview{ min-height: 400px; }
+.tool-page #previewFrame, .tool-page .preview-frame-wrap{ min-height: 360px; }
+}
+@media print  {
+.tool-page .split{ display: block; min-height: 0; }
+.tool-page .preview{ background: #fff; min-height: 100vh; }
+.tool-page .preview-stage{ padding: 0; }
+.tool-page .preview-frame-wrap{
         border: 0; box-shadow: none; border-radius: 0;
         min-height: 100vh;
       }
-      #previewFrame { min-height: 100vh; height: 100vh; background: #fff; }
-    }
-  </style>
-  <script>window.__ROOT__ = {{ root_path()|tojson }};</script>
-  <script src="{{ static_url('/static/js/upload.js') }}"></script>
-</head>
-<body>
-  <div class="bg" aria-hidden="true"></div>
-  <div class="tool-shell">
-  <div class="shell">
-    <div class="nav">
-      <a class="back" href="{{ url_path('/c/office') }}">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M19 12H5M11 18l-6-6 6-6"/>
-        </svg>
-        办公工具
-      </a>
-      <span class="chip">办公工具 · 发票合并</span>
-    </div>
+.tool-page #previewFrame{ min-height: 100vh; height: 100vh; background: #fff; }
+}
+</style>
+{% endblock %}
 
-    <div class="card" id="previewCard">
+{% block content %}
+<div class="card" id="previewCard">
       <div class="card-head">
         <div class="icon" aria-hidden="true">🧾</div>
         <div>
@@ -442,17 +279,14 @@
 
       <div class="split">
         <div class="controls">
-          <label class="drop" id="drop">
-            <input type="file" id="file" accept="application/pdf,.pdf" multiple />
-            <div class="drop-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 16V4M7 9l5-5 5 5"/>
-                <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
-              </svg>
-            </div>
-            <div class="drop-title">拖拽或选择 <strong>1～2 个 PDF</strong></div>
-            <div class="drop-hint">每文件第 1 页；单文件 ≤ 50 MB</div>
-          </label>
+          {% with
+  accept='application/pdf,.pdf',
+  multiple=true,
+  title_html='拖拽或选择 <strong>1～2 个 PDF</strong>',
+  hint='每文件第 1 页；单文件 ≤ 50 MB'
+%}
+{% include "partials/drop_zone.html" %}
+{% endwith %}
 
           <ul class="file-list" id="list"></ul>
 
@@ -509,12 +343,12 @@
             </div>
           </div>
         </div>
-      </div>
-    </div>
-  </div>
-  </div>
+</div>
+</div>
+{% endblock %}
 
-  <script>
+{% block scripts %}
+<script>
     var MAX_FILES = 2;
     var MAX_BYTES = 50 * 1024 * 1024;
     var fileInput = document.getElementById('file');
@@ -753,5 +587,4 @@
       }
     });
   </script>
-</body>
-</html>
+{% endblock %}

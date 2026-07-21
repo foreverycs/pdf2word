@@ -1,35 +1,23 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="多语言代码格式化 — JSON、JS/TS、Python、HTML/CSS/XML、SQL、YAML 等" />
-  <title>代码格式化 — 工具集</title>
-  <link rel="stylesheet" href="{{ static_url('/static/css/tokens.css') }}" />
-  <link rel="stylesheet" href="{{ static_url('/static/css/layout.css') }}" />
-  <link rel="stylesheet" href="{{ static_url('/static/css/tool-page.css') }}" />
-  <style>
+{% extends "tools/base.html" %}
+{% set page_title = "代码格式化" %}
+{% set page_description = "多语言代码格式化 / 压缩" %}
+{% set accent = "amber" %}
+{% set use_tool_page_css = true %}
+{% set use_upload_js = false %}
+{% set back_href = url_path("/c/coding") %}
+{% set back_label = "编码工具" %}
+{% set chip = "编码工具 · 格式化" %}
+
+{% block head_styles %}
+<style>
     /* Tool-specific tweaks only */
     .tool-page textarea { min-height: 260px; }
     #btnRun { min-width: 74px; }
   </style>
-  <script>window.__ROOT__ = {{ root_path()|tojson }};</script>
-</head>
-<body class="tool-page" data-accent="amber">
-  <div class="bg" aria-hidden="true"></div>
-  <div class="tool-shell">
-  <div class="shell">
-    <div class="nav">
-      <a class="back" href="{{ url_path('/c/coding') }}">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M19 12H5M11 18l-6-6 6-6"/>
-        </svg>
-        编码工具
-      </a>
-      <span class="chip" id="chipLabel">编码工具 · 代码格式化</span>
-    </div>
+{% endblock %}
 
-    <div class="card">
+{% block content %}
+<div class="card">
       <div class="card-head">
         <div class="icon" aria-hidden="true">{ }</div>
         <div>
@@ -113,11 +101,11 @@
         提示：JSON / XML 提供结构解析与错误行列定位；其它语言采用缩进与括号规则整理，适合粘贴调试片段。
         路径 <code>/tools/code-format</code>（旧 <code>/tools/json</code> 会 308 跳转）。快捷键 Ctrl/Cmd + Enter。
       </p>
-    </div>
-  </div>
-  </div>
+</div>
+{% endblock %}
 
-  <script>
+{% block scripts %}
+<script>
     const root = (window.__ROOT__ || '').replace(/\/$/, '');
     const api = (path) => root + path;
 
@@ -372,5 +360,4 @@
     const active = document.querySelector('.lang-tab.active') || langTabs[0];
     if (active) selectLanguage(active);
   </script>
-</body>
-</html>
+{% endblock %}

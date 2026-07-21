@@ -1,14 +1,15 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Markdown 编辑与实时预览 — 表格、代码块、导出 HTML" />
-  <title>Markdown 编辑 — 工具集</title>
-  <link rel="stylesheet" href="{{ static_url('/static/css/tokens.css') }}" />
-  <link rel="stylesheet" href="{{ static_url('/static/css/layout.css') }}" />
-  <link rel="stylesheet" href="{{ static_url('/static/css/tool-page.css') }}" />
-  <style>
+{% extends "tools/base.html" %}
+{% set page_title = "Markdown 编辑" %}
+{% set page_description = "Markdown 编辑与实时预览" %}
+{% set accent = "amber" %}
+{% set use_tool_page_css = true %}
+{% set use_upload_js = false %}
+{% set back_href = url_path("/c/coding") %}
+{% set back_label = "编码工具" %}
+{% set chip = "编码工具 · Markdown" %}
+
+{% block head_styles %}
+<style>
     /* Markdown preview typography (tool-specific) */
     .tool-page .panes { gap: 12px; min-height: 420px; }
     @media (max-width: 860px) {
@@ -72,23 +73,10 @@
       padding: 24px 8px; text-align: center;
     }
   </style>
-  <script>window.__ROOT__ = {{ root_path()|tojson }};</script>
-</head>
-<body class="tool-page" data-accent="amber">
-  <div class="bg" aria-hidden="true"></div>
-  <div class="tool-shell">
-  <div class="shell">
-    <div class="nav">
-      <a class="back" href="{{ url_path('/c/coding') }}">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M19 12H5M11 18l-6-6 6-6"/>
-        </svg>
-        编码工具
-      </a>
-      <span class="chip">Edit · Preview</span>
-    </div>
+{% endblock %}
 
-    <div class="card">
+{% block content %}
+<div class="card">
       <div class="card-head">
         <div class="icon" aria-hidden="true">MD</div>
         <div>
@@ -145,11 +133,11 @@
         提示：Tab 插入两个空格；Ctrl/Cmd + Enter 立即渲染。
         默认 XSS 过滤开启。最大约 {{ (max_chars // 1024) if max_chars else 512 }}K 字符。
       </p>
-    </div>
-  </div>
-  </div>
+</div>
+{% endblock %}
 
-  <script>
+{% block scripts %}
+<script>
     const SAMPLE = {{ sample|tojson }};
     const SNIPPETS = {
       TABLE: "\n| a | b |\n|---|---|\n| 1 | 2 |\n",
@@ -391,5 +379,4 @@
     }
     renderNow();
   </script>
-</body>
-</html>
+{% endblock %}

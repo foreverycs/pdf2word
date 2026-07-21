@@ -1,0 +1,31 @@
+{# Shared file drop / pick zone for upload tools.
+   Expects:
+     title_html  — HTML for .drop-title (may contain <strong>)
+     hint        — plain text for .drop-hint
+   Optional:
+     accept, multiple (bool), disabled (bool)
+     drop_id (default "drop"), file_id (default "file")
+     input_name, list_id (if set, renders <ul class="file-list"> after)
+     drop_extra_class — extra classes on the label (e.g. "disabled")
+#}
+{% set _drop_id = drop_id|default("drop") %}
+{% set _file_id = file_id|default("file") %}
+<label class="drop{% if drop_extra_class %} {{ drop_extra_class }}{% endif %}{% if disabled %} disabled{% endif %}" id="{{ _drop_id }}">
+  <input type="file"
+         id="{{ _file_id }}"
+         {% if input_name is defined and input_name %}name="{{ input_name }}"{% endif %}
+         {% if accept is defined and accept %}accept="{{ accept }}"{% endif %}
+         {% if multiple %}multiple{% endif %}
+         {% if disabled %}disabled{% endif %} />
+  <div class="drop-icon" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 16V4M7 9l5-5 5 5"/>
+      <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+    </svg>
+  </div>
+  <div class="drop-title">{{ title_html|safe }}</div>
+  <div class="drop-hint">{{ hint }}</div>
+</label>
+{% if list_id is defined and list_id %}
+<ul class="file-list" id="{{ list_id }}"></ul>
+{% endif %}

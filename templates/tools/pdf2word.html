@@ -1,269 +1,17 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="PDF 转 Word — 高保真表格与图片转换" />
-  <title>PDF 转 Word — 工具箱</title>
-  <link rel="stylesheet" href="{{ static_url('/static/css/tokens.css') }}" />
-  <link rel="stylesheet" href="{{ static_url('/static/css/layout.css') }}" />
-  <style>
-    :root {
-      --c: #4f46e5;
-      --c2: #6366f1;
-      --c-soft: #eef2ff;
-      --c-border: #c7d2fe;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: var(--font);
-      color: var(--ink);
-      min-height: 100vh;
-      background: var(--bg);
-    }
-    .bg {
-      position: fixed; inset: 0; z-index: 0; pointer-events: none;
-      background:
-        radial-gradient(ellipse 80% 55% at 12% 8%, rgba(99, 102, 241, 0.3), transparent 55%),
-        radial-gradient(ellipse 60% 45% at 92% 12%, rgba(139, 92, 246, 0.16), transparent 50%),
-        radial-gradient(ellipse 50% 40% at 50% 100%, rgba(99, 102, 241, 0.1), transparent 55%),
-        linear-gradient(165deg, #f0f4ff 0%, #eef2f7 45%, #f5f7fb 100%);
-    }
-    .bg::before {
-      content: "";
-      position: absolute; inset: 0;
-      background-image:
-        linear-gradient(rgba(255,255,255,0.45) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,0.45) 1px, transparent 1px);
-      background-size: 48px 48px;
-      mask-image: radial-gradient(ellipse 70% 55% at 50% 35%, black 15%, transparent 75%);
-      opacity: 0.5;
-    }
+{% extends "tools/base.html" %}
+{% set page_title = "PDF 转 Word" %}
+{% set page_description = "PDF 转 Word — 高保真表格与图片转换" %}
+{% set accent = "indigo" %}
+{% set use_tool_page_css = true %}
+{% set use_upload_js = true %}
+{% set back_href = url_path("/c/document") %}
+{% set back_label = "文档处理" %}
+{% set chip = "PDF → Word" %}
 
-    /* Inner form uses full shared column width */
-    .shell {
-      position: relative;
-      z-index: 1;
-      width: 100%;
-    }
-    .nav {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 16px; gap: 12px;
-    }
-    .back {
-      display: inline-flex; align-items: center; gap: 6px;
-      font-size: 13px; font-weight: 600; color: var(--muted);
-      text-decoration: none; padding: 8px 12px;
-      background: var(--surface); border: 1px solid var(--line);
-      border-radius: 999px; backdrop-filter: blur(10px);
-      transition: color .15s, border-color .15s, background .15s;
-    }
-    .back:hover { color: var(--c); border-color: var(--c-border); background: #fff; }
-    .back svg { width: 15px; height: 15px; }
-    .chip {
-      font-size: 11px; font-weight: 700; color: var(--c);
-      background: var(--c-soft); border: 1px solid var(--c-border);
-      padding: 6px 11px; border-radius: 999px;
-    }
+{% block title %}PDF 转 Word — 工具箱{% endblock %}
 
-    .card {
-      background: #fff;
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      padding: 28px 28px 24px;
-      overflow: hidden;
-      position: relative;
-    }
-    .card::before {
-      content: "";
-      position: absolute; left: 0; right: 0; top: 0; height: 3px;
-      background: linear-gradient(90deg, var(--c), var(--c2), #8b5cf6);
-    }
-    .card-head {
-      display: flex; gap: 14px; align-items: flex-start;
-      margin-bottom: 22px;
-    }
-    .icon {
-      width: 52px; height: 52px; border-radius: 16px; flex-shrink: 0;
-      display: grid; place-items: center; font-size: 24px;
-      background: linear-gradient(145deg, var(--c2), var(--c));
-      box-shadow: 0 10px 24px rgba(79, 70, 229, 0.35),
-        inset 0 1px 0 rgba(255,255,255,0.28);
-    }
-    .card-head h1 {
-      font-size: 1.35rem; font-weight: 800; letter-spacing: -0.03em;
-      color: var(--ink); margin-bottom: 6px; line-height: 1.2;
-    }
-    .card-head p {
-      font-size: 13px; line-height: 1.6; color: var(--muted);
-    }
-
-    .features {
-      display: flex; flex-wrap: wrap; gap: 6px;
-      margin: -6px 0 20px;
-    }
-    .feat {
-      font-size: 11px; font-weight: 600; color: #475569;
-      background: #f8fafc; border: 1px solid #eef2f7;
-      padding: 4px 9px; border-radius: 8px;
-    }
-
-    .drop {
-      display: block; width: 100%; cursor: pointer;
-      border: 2px dashed var(--c-border);
-      border-radius: 16px; padding: 32px 18px;
-      text-align: center; background: linear-gradient(180deg, #fafbff 0%, #f5f7ff 100%);
-      transition: border-color .15s, background .15s, box-shadow .15s;
-    }
-    .drop:hover, .drop.drag {
-      border-color: var(--c);
-      background: var(--c-soft);
-      box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.08);
-    }
-    .drop-icon {
-      width: 48px; height: 48px; margin: 0 auto 12px;
-      border-radius: 14px; display: grid; place-items: center;
-      background: #fff; border: 1px solid var(--c-border);
-      color: var(--c); box-shadow: var(--shadow-sm);
-    }
-    .drop-icon svg { width: 22px; height: 22px; }
-    .drop-title { font-size: 14px; font-weight: 600; color: var(--ink-2); }
-    .drop-title strong { color: var(--c); }
-    .drop-hint { margin-top: 6px; font-size: 12px; color: var(--muted-2); }
-    input[type=file] { display: none; }
-
-    .file-list {
-      margin: 12px 0 0; padding: 0; list-style: none;
-      max-height: 168px; overflow: auto;
-    }
-    .file-list li {
-      display: flex; align-items: center; gap: 10px;
-      font-size: 12px; color: var(--ink-2);
-      padding: 10px 12px; margin-bottom: 6px;
-      background: #f8fafc; border: 1px solid #eef2f7; border-radius: 12px;
-    }
-    .file-list .fi {
-      width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0;
-      display: grid; place-items: center; font-size: 14px;
-      background: var(--c-soft); color: var(--c);
-    }
-    .file-list .fname {
-      flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-      font-weight: 600;
-    }
-    .file-list .fsize { color: var(--muted-2); flex-shrink: 0; font-size: 11px; }
-    .file-list button {
-      border: 0; background: transparent; color: var(--muted-2);
-      font-size: 12px; font-weight: 600; cursor: pointer;
-      padding: 4px 8px; border-radius: 8px;
-    }
-    .file-list button:hover { color: #dc2626; background: #fef2f2; }
-
-    .opts {
-      margin-top: 16px; display: grid; gap: 14px;
-      padding: 16px; background: #f8fafc;
-      border: 1px solid #eef2f7; border-radius: 16px;
-    }
-    .opts-title {
-      font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
-      text-transform: uppercase; color: var(--muted-2);
-    }
-    .opts label.field {
-      display: flex; flex-direction: column; gap: 6px;
-      font-size: 12px; font-weight: 600; color: #475569;
-    }
-    .opts input[type=text] {
-      padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 11px;
-      font-size: 13px; font-weight: 500; outline: none; background: #fff;
-      color: var(--ink); transition: border-color .15s, box-shadow .15s;
-    }
-    .opts input[type=text]:focus {
-      border-color: var(--c2);
-      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
-    }
-    .opts .hint { color: var(--muted-2); font-size: 11px; font-weight: 500; }
-    .opts .check {
-      display: flex; align-items: center; gap: 10px;
-      font-size: 13px; font-weight: 600; color: var(--ink-2); cursor: pointer;
-    }
-    .opts .check input {
-      width: 16px; height: 16px; accent-color: var(--c); cursor: pointer;
-    }
-
-    #btn {
-      width: 100%; margin-top: 18px; padding: 13px 16px; border: 0;
-      border-radius: 14px; font-size: 15px; font-weight: 700; cursor: pointer;
-      color: #fff;
-      background: linear-gradient(135deg, var(--c) 0%, var(--c2) 100%);
-      box-shadow: 0 8px 20px rgba(79, 70, 229, 0.32);
-      transition: transform .15s, box-shadow .15s, opacity .15s;
-    }
-    #btn:hover:not(:disabled) {
-      transform: translateY(-1px);
-      box-shadow: 0 12px 28px rgba(79, 70, 229, 0.4);
-    }
-    #btn:disabled {
-      background: #e2e8f0; color: #94a3b8; box-shadow: none;
-      cursor: not-allowed; transform: none;
-    }
-
-    .progress {
-      display: none; margin-top: 14px; height: 7px;
-      background: #eef2f7; border-radius: 999px; overflow: hidden;
-    }
-    .progress.show { display: block; }
-    .progress > i {
-      display: block; height: 100%; width: 0%;
-      background: linear-gradient(90deg, var(--c), var(--c2), #a78bfa);
-      border-radius: 999px; transition: width .15s ease;
-    }
-
-    #status {
-      margin-top: 14px; font-size: 13px; min-height: 20px; line-height: 1.55;
-      font-weight: 500;
-    }
-    #status:not(:empty) {
-      padding: 10px 12px; border-radius: 12px; background: #f8fafc;
-      border: 1px solid #eef2f7;
-    }
-    #status.err { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
-    #status.ok { color: #15803d; background: #f0fdf4; border-color: #bbf7d0; }
-    #status.info { color: #334155; }
-    #status.warn { color: #b45309; background: #fffbeb; border-color: #fde68a; }
-
-    @keyframes enter {
-      from { opacity: 0; transform: translateY(14px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    @media (max-width: 480px) {
-      .card { padding: 22px 18px 18px; }
-      .card-head { gap: 12px; }
-      .icon { width: 46px; height: 46px; border-radius: 14px; font-size: 22px; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .shell { animation: none; }
-      #btn { transition: none; }
-    }
-  </style>
-  <script>window.__ROOT__ = {{ root_path()|tojson }};</script>
-  <script src="{{ static_url('/static/js/upload.js') }}"></script>
-</head>
-<body>
-  <div class="bg" aria-hidden="true"></div>
-  <div class="tool-shell">
-  <div class="shell">
-    <div class="nav">
-      <a class="back" href="{{ url_path('/c/document') }}">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M19 12H5M11 18l-6-6 6-6"/>
-        </svg>
-        文档处理
-      </a>
-      <span class="chip">PDF → Word</span>
-    </div>
-
-    <div class="card">
+{% block content %}
+<div class="card">
       <div class="card-head">
         <div class="icon" aria-hidden="true">📄</div>
         <div>
@@ -280,18 +28,15 @@
         <span class="feat">批量 ZIP</span>
       </div>
 
-      <label class="drop" id="drop">
-        <input type="file" id="file" accept="application/pdf,.pdf" multiple />
-        <div class="drop-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 16V4M7 9l5-5 5 5"/>
-            <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
-          </svg>
-        </div>
-        <div class="drop-title">点击或拖拽 <strong>PDF 文件</strong> 到此处</div>
-        <div class="drop-hint">最多 20 个 · 每个 ≤ 50 MB · 大文件 / OCR 可能需数分钟</div>
-      </label>
-      <ul class="file-list" id="list"></ul>
+      {% with
+  accept='application/pdf,.pdf',
+  multiple=true,
+  title_html='点击或拖拽 <strong>PDF 文件</strong> 到此处',
+  hint='最多 20 个 · 每个 ≤ 50 MB · 大文件 / OCR 可能需数分钟',
+  list_id='list'
+%}
+{% include "partials/drop_zone.html" %}
+{% endwith %}
 
       <div class="opts">
         <div class="opts-title">转换选项</div>
@@ -320,11 +65,11 @@
       <button id="btn" disabled>开始转换</button>
       <div class="progress" id="progress"><i id="bar"></i></div>
       <div id="status"></div>
-    </div>
-  </div>
-  </div>
+</div>
+{% endblock %}
 
-  <script>
+{% block scripts %}
+<script>
     const MAX_FILES = 20;
     const MAX_BYTES = 50 * 1024 * 1024;
     const LS_KEY = 'pdf2word_opts_v1';
@@ -581,5 +326,4 @@
       }
     });
   </script>
-</body>
-</html>
+{% endblock %}

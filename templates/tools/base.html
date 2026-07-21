@@ -1,0 +1,51 @@
+{# Shared chrome for all /tools/* pages.
+   Child templates set variables and fill blocks:
+
+     {% extends "tools/base.html" %}
+     {% set page_title = "…" %}
+     {% set page_description = "…" %}
+     {% set accent = "amber" %}          optional; with body_class tool-page
+     {% set use_tool_page_css = true %}  default true
+     {% set use_upload_js = false %}     load static/js/upload.js in head
+     {% set back_href / back_label / chip %} for default tool_nav block
+
+   Blocks: head_styles, head_extra, body_attrs, body_class, tool_nav, content, scripts
+#}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  {% if page_description is defined and page_description %}
+  <meta name="description" content="{{ page_description }}" />
+  {% endif %}
+  <title>{% block title %}{{ page_title|default("工具") }} — 工具集{% endblock %}</title>
+  <link rel="stylesheet" href="{{ static_url('/static/css/tokens.css') }}" />
+  <link rel="stylesheet" href="{{ static_url('/static/css/layout.css') }}" />
+  {% if use_tool_page_css|default(true) %}
+  <link rel="stylesheet" href="{{ static_url('/static/css/tool-page.css') }}" />
+  {% endif %}
+  {% block head_styles %}{% endblock %}
+  {% include "partials/root_script.html" %}
+  {% if use_upload_js|default(false) %}
+  <script src="{{ static_url('/static/js/upload.js') }}"></script>
+  {% endif %}
+  {% block head_extra %}{% endblock %}
+</head>
+<body class="{% block body_class %}tool-page{% endblock %}"{% if accent is defined and accent %} data-accent="{{ accent }}"{% endif %}{% block body_attrs %}{% endblock %}>
+  <div class="bg" aria-hidden="true"></div>
+  <div class="tool-shell">
+  <div class="shell">
+    {% block tool_nav %}
+    {% if back_href is defined and back_label is defined %}
+    {% include "partials/tool_nav.html" %}
+    {% endif %}
+    {% endblock %}
+
+    {% block content %}{% endblock %}
+  </div>
+  </div>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>
