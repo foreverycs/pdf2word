@@ -18,7 +18,9 @@ import platform
 import shutil
 import subprocess
 import tempfile
+import time
 import zipfile
+from functools import lru_cache
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -51,42 +53,64 @@ _LO_PDF_FILTER = "pdf:writer_pdf_Export"
 # missing engine → EngineNotFoundError (HTTP 503); runtime failures → ConversionError.
 
 
-def _which_soffice() -> Optional[str]:
+# PATH / install-dir probes are expensive on Windows (shutil.which can take
+# 100–200ms+). Cache for process lifetime; restart after installing LibreOffice.
+_SOFFICE_CACHE: Optional[tuple[float, Optional[str]]] = None
+_ENGINE_INFO_CACHE: Optional[tuple[float, dict]] = None
+
+
+def _which_soffice(*, force: bool = False) -> Optional[str]:
     """Locate the LibreOffice ``soffice`` binary.
 
     Order: ``LIBREOFFICE_PATH`` / ``SOFFICE_PATH`` env → PATH → common
     Windows install dirs → common Linux container paths.
     """
+    global _SOFFICE_CACHE
+    now = time.monotonic()
+    if not force and _SOFFICE_CACHE is not None:
+        return _SOFFICE_CACHE[1]
+
+    found_path: Optional[str] = None
     env = os.environ.get("LIBREOFFICE_PATH") or os.environ.get("SOFFICE_PATH")
     if env:
         # Accept either a file or a directory that contains soffice.
         if os.path.isfile(env):
-            return env
-        for name in ("soffice", "soffice.exe", "libreoffice"):
-            candidate = os.path.join(env, name)
-            if os.path.isfile(candidate):
-                return candidate
+            found_path = env
+        else:
+            for name in ("soffice", "soffice.exe", "libreoffice"):
+                candidate = os.path.join(env, name)
+                if os.path.isfile(candidate):
+                    found_path = candidate
+                    break
 
-    for name in ("soffice", "libreoffice"):
-        found = shutil.which(name)
-        if found:
-            return found
+    if found_path is None:
+        for name in ("soffice", "libreoffice"):
+            found = shutil.which(name)
+            if found:
+                found_path = found
+                break
 
-    if platform.system() == "Windows":
-        for path in _WIN_SOFFICE_CANDIDATES:
-            if os.path.isfile(path):
-                return path
-    else:
-        for path in (
-            "/usr/bin/soffice",
-            "/usr/bin/libreoffice",
-            "/usr/lib/libreoffice/program/soffice",
-        ):
-            if os.path.isfile(path):
-                return path
-    return None
+    if found_path is None:
+        if platform.system() == "Windows":
+            for path in _WIN_SOFFICE_CANDIDATES:
+                if os.path.isfile(path):
+                    found_path = path
+                    break
+        else:
+            for path in (
+                "/usr/bin/soffice",
+                "/usr/bin/libreoffice",
+                "/usr/lib/libreoffice/program/soffice",
+            ):
+                if os.path.isfile(path):
+                    found_path = path
+                    break
+
+    _SOFFICE_CACHE = (now, found_path)
+    return found_path
 
 
+@lru_cache(maxsize=1)
 def _word_com_available() -> bool:
     """Return True if Microsoft Word can be driven on this machine."""
     if platform.system() != "Windows":
@@ -113,11 +137,16 @@ def available_engines() -> List[str]:
     return engines
 
 
-def engine_info() -> dict:
-    """Diagnostic info for UI / health checks."""
-    soffice = _which_soffice()
+def engine_info(*, force: bool = False) -> dict:
+    """Diagnostic info for UI / health checks (cached for process lifetime)."""
+    global _ENGINE_INFO_CACHE
+    now = time.monotonic()
+    if not force and _ENGINE_INFO_CACHE is not None:
+        return dict(_ENGINE_INFO_CACHE[1])
+
+    soffice = _which_soffice(force=force)
     engines = available_engines()
-    return {
+    info = {
         "engines": engines,
         "preferred": engines[0] if engines else None,
         "libreoffice_path": soffice,
@@ -128,6 +157,16 @@ def engine_info() -> dict:
             "Layout fidelity follows LibreOffice or Microsoft Word rendering.",
         ],
     }
+    _ENGINE_INFO_CACHE = (now, info)
+    return dict(info)
+
+
+def clear_engine_cache() -> None:
+    """Drop soffice / engine_info caches (tests or after installing LibreOffice)."""
+    global _SOFFICE_CACHE, _ENGINE_INFO_CACHE
+    _SOFFICE_CACHE = None
+    _ENGINE_INFO_CACHE = None
+    _word_com_available.cache_clear()
 
 
 def _validate_input(input_path: str) -> Path:

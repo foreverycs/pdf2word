@@ -92,35 +92,41 @@
 
   <div class="admin-panel">
     <div class="admin-panel-h">引擎与能力</div>
-    <div class="admin-panel-b">
+    <div class="admin-panel-b" id="adminHealthPanel" data-pending="{{ '1' if health_pending else '0' }}">
       <ul class="admin-list">
         <li>
           <span>Word → PDF</span>
-          {% if health.word2pdf.ready %}
-          <span class="admin-badge ok">{{ health.word2pdf.preferred or 'ready' }}</span>
+          {% if health_pending or not health %}
+          <span class="admin-badge" id="healthW2p">检测中…</span>
+          {% elif health.word2pdf.ready %}
+          <span class="admin-badge ok" id="healthW2p">{{ health.word2pdf.preferred or 'ready' }}</span>
           {% else %}
-          <span class="admin-badge err">不可用</span>
+          <span class="admin-badge err" id="healthW2p">不可用</span>
           {% endif %}
         </li>
         <li>
           <span>OCR</span>
-          {% if health.ocr.available %}
-          <span class="admin-badge ok">{{ health.ocr.lang or 'ready' }}</span>
+          {% if health_pending or not health %}
+          <span class="admin-badge" id="healthOcr">检测中…</span>
+          {% elif health.ocr.available %}
+          <span class="admin-badge ok" id="healthOcr">{{ health.ocr.lang or 'ready' }}</span>
           {% else %}
-          <span class="admin-badge warn">未安装</span>
+          <span class="admin-badge warn" id="healthOcr">未安装</span>
           {% endif %}
         </li>
         <li>
           <span>前台启用工具</span>
-          <strong>{{ health.tools }}{% if health.tools_registered %} / {{ health.tools_registered }}{% endif %}</strong>
+          <strong id="healthTools">
+            {% if health %}{{ health.tools }}{% if health.tools_registered %} / {{ health.tools_registered }}{% endif %}{% else %}—{% endif %}
+          </strong>
         </li>
         <li>
           <span>已关闭</span>
-          <strong>{{ health.tools_disabled or 0 }}</strong>
+          <strong id="healthDisabled">{% if health %}{{ health.tools_disabled or 0 }}{% else %}—{% endif %}</strong>
         </li>
         <li>
           <span>栏目数</span>
-          <strong>{{ health.categories }}</strong>
+          <strong id="healthCats">{% if health %}{{ health.categories }}{% else %}—{% endif %}</strong>
         </li>
       </ul>
       {% if stats.by_tool %}
@@ -134,4 +140,60 @@
     </div>
   </div>
 </div>
+{% if health_pending %}
+<script>
+(function () {
+  var root = (window.__ROOT__ || '').replace(/\/$/, '');
+  var tries = 0;
+  function paint(h) {
+    if (!h) return;
+    var w = document.getElementById('healthW2p');
+    var o = document.getElementById('healthOcr');
+    var t = document.getElementById('healthTools');
+    var d = document.getElementById('healthDisabled');
+    var c = document.getElementById('healthCats');
+    if (w) {
+      if (h.word2pdf && h.word2pdf.ready) {
+        w.className = 'admin-badge ok';
+        w.textContent = h.word2pdf.preferred || 'ready';
+      } else {
+        w.className = 'admin-badge err';
+        w.textContent = '不可用';
+      }
+    }
+    if (o) {
+      if (h.ocr && h.ocr.available) {
+        o.className = 'admin-badge ok';
+        o.textContent = h.ocr.lang || 'ready';
+      } else {
+        o.className = 'admin-badge warn';
+        o.textContent = '未安装';
+      }
+    }
+    if (t) {
+      t.textContent = (h.tools != null ? h.tools : '—')
+        + (h.tools_registered != null ? ' / ' + h.tools_registered : '');
+    }
+    if (d) d.textContent = h.tools_disabled != null ? h.tools_disabled : '—';
+    if (c) c.textContent = h.categories != null ? h.categories : '—';
+  }
+  function tick() {
+    tries += 1;
+    fetch(root + '/admin/api/stats', { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (data && data.health && data.health.word2pdf) {
+          paint(data.health);
+          return;
+        }
+        if (tries < 20) setTimeout(tick, 400);
+      })
+      .catch(function () {
+        if (tries < 20) setTimeout(tick, 600);
+      });
+  }
+  setTimeout(tick, 200);
+})();
+</script>
+{% endif %}
 {% endblock %}

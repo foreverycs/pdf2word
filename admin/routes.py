@@ -49,7 +49,8 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 # Cached health info — engines don't change at runtime
 _health_cache: dict = {}
 _health_cache_ts: float = 0.0
-_HEALTH_TTL: float = 60.0
+_HEALTH_TTL: float = 300.0
+_health_warming: bool = False
 
 
 def _tpl(request: Request, name: str, **ctx):
@@ -65,6 +66,43 @@ def _tpl(request: Request, name: str, **ctx):
     resp = templates.TemplateResponse(request, name, data)
     set_csrf_cookie(resp, csrf)
     return resp
+
+
+def get_cached_health() -> Optional[dict]:
+    """Return warm health snapshot without probing engines (may be None)."""
+    if not _health_cache:
+        return None
+    if time.monotonic() - _health_cache_ts >= _HEALTH_TTL:
+        return None
+    return _health_cache
+
+
+def warm_health_cache(*, force: bool = False) -> dict:
+    """Populate health cache (safe to call from a background thread)."""
+    return _build_health(force=force)
+
+
+def schedule_health_warm() -> None:
+    """Fire-and-forget engine probe so the first admin click is not blocked."""
+    global _health_warming
+    if _health_warming:
+        return
+    if get_cached_health() is not None:
+        return
+    _health_warming = True
+
+    def _run() -> None:
+        global _health_warming
+        try:
+            _build_health(force=True)
+        except Exception:
+            pass
+        finally:
+            _health_warming = False
+
+    import threading
+
+    threading.Thread(target=_run, name="admin-health-warm", daemon=True).start()
 
 
 def _safe_next(next_url: Optional[str], request: Optional[Request] = None) -> str:
@@ -93,17 +131,21 @@ def _admin_url(path: str, request: Optional[Request] = None) -> str:
     return url_path(path, request)
 
 
-def _build_health() -> dict:
+def _build_health(*, force: bool = False) -> dict:
     global _health_cache, _health_cache_ts
     now = time.monotonic()
-    if _health_cache and now - _health_cache_ts < _HEALTH_TTL:
+    if (
+        not force
+        and _health_cache
+        and now - _health_cache_ts < _HEALTH_TTL
+    ):
         return _health_cache
     from word2pdf import engine_info
     from converter import ocr_info
 
     from core.tool_flags import flags_status
 
-    w2p = engine_info()
+    w2p = engine_info(force=force)
     ocr = ocr_info()
     flags = flags_status()
     _health_cache = {
@@ -216,12 +258,18 @@ async def dashboard(request: Request):
     redir = require_admin(request)
     if redir:
         return redir
+    # Never block the dashboard on LibreOffice/Tesseract probes — use cache
+    # and refresh engines in the browser via /admin/api/stats when cold.
+    health = get_cached_health()
+    if health is None:
+        schedule_health_warm()
     return _tpl(
         request,
         "admin/dashboard.html",
         active="dashboard",
         stats=storage_stats(),
-        health=_build_health(),
+        health=health,
+        health_pending=health is None,
         recent=list_records(limit=8),
         tools=TOOL_REGISTRY,
         categories=tools_by_category(include_disabled=True),
@@ -634,11 +682,16 @@ async def system_page(request: Request):
         return redir
     from core.tool_flags import flags_status
 
+    # Prefer warm cache; only probe synchronously if still cold after startup warm.
+    health = get_cached_health()
+    if health is None:
+        health = _build_health()
+
     return _tpl(
         request,
         "admin/system.html",
         active="system",
-        health=_build_health(),
+        health=health,
         stats=storage_stats(),
         tools=TOOL_REGISTRY,
         categories=tools_by_category(include_disabled=True),

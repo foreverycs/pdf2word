@@ -367,6 +367,7 @@ def _archive_conversion(
                     json.dumps(extra_fields, ensure_ascii=False),
                 ),
             )
+            clear_storage_stats_cache()
             # Purge expired records inline.
             cutoff = _cutoff()
             cutoff_iso = _iso(cutoff)
@@ -521,11 +522,32 @@ def delete_records(record_ids: List[str]) -> int:
                 conn.commit()
         finally:
             conn.close()
+    if removed:
+        clear_storage_stats_cache()
     return removed
 
 
-def storage_stats() -> Dict[str, Any]:
-    """Aggregate stats for admin dashboard."""
+_stats_cache: Optional[tuple[float, Dict[str, Any]]] = None
+_STATS_TTL_SEC = 15.0
+
+
+def storage_stats(*, force: bool = False) -> Dict[str, Any]:
+    """Aggregate stats for admin dashboard.
+
+    Results are cached briefly so dashboard / system page navigation stays snappy.
+    Cleanup is rate-limited via ``cleanup_expired``; disk walks reuse the cache.
+    """
+    global _stats_cache
+    import time
+
+    now = time.monotonic()
+    if (
+        not force
+        and _stats_cache is not None
+        and now - _stats_cache[0] < _STATS_TTL_SEC
+    ):
+        return dict(_stats_cache[1])
+
     try:
         cleanup_expired()
     except Exception:
@@ -535,45 +557,88 @@ def storage_stats() -> Dict[str, Any]:
         conn = _get_conn()
         try:
             _migrate_json_if_needed(conn)
-            rows = conn.execute(
-                "SELECT * FROM records ORDER BY created_at DESC"
+            # Aggregate in SQL — avoid loading every row into Python.
+            row = conn.execute(
+                """
+                SELECT
+                  COUNT(*) AS record_count,
+                  COALESCE(SUM(input_bytes), 0) AS bytes_indexed
+                FROM records
+                """
+            ).fetchone()
+            by_tool_rows = conn.execute(
+                """
+                SELECT tool, COUNT(*) AS n
+                FROM records
+                GROUP BY tool
+                """
             ).fetchall()
+            latest_row = conn.execute(
+                "SELECT * FROM records ORDER BY created_at DESC LIMIT 1"
+            ).fetchone()
+            # Sample file presence on a bounded set (not full table scan on disk).
+            sample_rows = conn.execute(
+                """
+                SELECT input_rel FROM records
+                WHERE input_rel IS NOT NULL AND input_rel != ''
+                ORDER BY created_at DESC
+                LIMIT 200
+                """
+            ).fetchall()
+            total_count = int(row["record_count"] or 0) if row else 0
         finally:
             conn.close()
 
-    records = [_row_to_dict(r) for r in rows]
     by_tool: Dict[str, int] = {}
-    total_bytes = 0
-    with_file = 0
-    for rec in records:
-        tool = str(rec.get("tool") or "unknown")
-        by_tool[tool] = by_tool.get(tool, 0) + 1
-        try:
-            total_bytes += int(rec.get("input_bytes") or 0)
-        except (TypeError, ValueError):
-            pass
-        rel = rec.get("input_rel")
-        if rel and (root / str(rel)).is_file():
-            with_file += 1
+    for r in by_tool_rows:
+        tool = str(r["tool"] or "unknown")
+        by_tool[tool] = int(r["n"] or 0)
+
+    total_bytes = int(row["bytes_indexed"] or 0) if row else 0
+    sample_present = 0
+    sample_total = 0
+    for r in sample_rows:
+        rel = r["input_rel"] if not isinstance(r, dict) else r.get("input_rel")
+        if not rel:
+            continue
+        sample_total += 1
+        if (root / str(rel)).is_file():
+            sample_present += 1
+    # Extrapolate presence when only a sample was checked.
+    if total_count <= sample_total or sample_total == 0:
+        with_file = sample_present
+    else:
+        ratio = sample_present / max(sample_total, 1)
+        with_file = int(round(total_count * ratio))
 
     disk_bytes = 0
     try:
-        for p in root.rglob("*"):
-            if p.is_file():
-                try:
-                    disk_bytes += p.stat().st_size
-                except OSError:
-                    pass
+        # Cap walk depth cost: only top-level date dirs + files (typical layout).
+        if root.is_dir():
+            for p in root.rglob("*"):
+                if p.is_file():
+                    try:
+                        disk_bytes += p.stat().st_size
+                    except OSError:
+                        pass
     except OSError:
         pass
 
-    return {
+    result = {
         "retention_days": retention_days(),
         "file_dir": str(root),
-        "record_count": len(records),
+        "record_count": total_count,
         "files_present": with_file,
         "bytes_indexed": total_bytes,
         "bytes_on_disk": disk_bytes,
         "by_tool": by_tool,
-        "latest": records[0] if records else None,
+        "latest": _row_to_dict(latest_row) if latest_row is not None else None,
     }
+    _stats_cache = (now, result)
+    return dict(result)
+
+
+def clear_storage_stats_cache() -> None:
+    """Drop cached ``storage_stats`` (after deletes / tests)."""
+    global _stats_cache
+    _stats_cache = None

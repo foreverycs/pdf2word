@@ -50,8 +50,9 @@ def ocr_available() -> bool:
         return False
 
 
+@lru_cache(maxsize=1)
 def ocr_info() -> dict:
-    """Diagnostic info for health / UI."""
+    """Diagnostic info for health / UI (cached; binary probe is expensive)."""
     available = ocr_available()
     lang = os.environ.get("PDF2WORD_OCR_LANG") or DEFAULT_OCR_LANG
     cmd = None

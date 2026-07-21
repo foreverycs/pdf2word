@@ -112,6 +112,13 @@ async def lifespan(app: FastAPI):
         __version__,
         len(TOOL_REGISTRY),
     )
+    # Probe LibreOffice / OCR off the request path so admin dashboard is snappy.
+    try:
+        from admin.routes import schedule_health_warm
+
+        schedule_health_warm()
+    except Exception:
+        pass
     try:
         yield
     finally:

@@ -12,6 +12,16 @@
   height: 100dvh;
   overflow: hidden;
 }
+
+/* Brief full-page dim while navigating between admin views */
+.admin-body.admin-navigating .admin-main {
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.admin-body.admin-navigating {
+  cursor: progress;
+}
 .admin-body,
 .admin-body *,
 .admin-body *::before,

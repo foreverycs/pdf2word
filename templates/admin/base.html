@@ -7,6 +7,12 @@
   <link rel="stylesheet" href="{{ static_url('/static/css/tokens.css') }}" />
   <link rel="stylesheet" href="{{ static_url('/static/css/admin.css') }}" />
   <script>window.__ROOT__ = {{ root_path()|tojson }};</script>
+  {# Speculative prefetch: makes sidebar switches feel instant after first paint. #}
+  <link rel="prefetch" href="{{ url_path('/admin') }}" as="document" />
+  <link rel="prefetch" href="{{ url_path('/admin/uploads') }}" as="document" />
+  <link rel="prefetch" href="{{ url_path('/admin/express') }}" as="document" />
+  <link rel="prefetch" href="{{ url_path('/admin/tools') }}" as="document" />
+  <link rel="prefetch" href="{{ url_path('/admin/system') }}" as="document" />
 </head>
 <body class="admin-body">
   <!-- Drawer + backdrop sit outside .admin-layout so mobile fixed positioning
@@ -94,7 +100,7 @@
         </div>
       </div>
     </header>
-    <main class="admin-main">
+    <main class="admin-main" id="adminMain">
       {% block content %}{% endblock %}
     </main>
   </div>
@@ -105,7 +111,11 @@
       var backdrop = document.getElementById('adminSideBackdrop');
       var openBtn = document.getElementById('adminMenuBtn');
       var closeBtn = document.getElementById('adminSideClose');
-      if (!side || !backdrop || !openBtn) return;
+      var main = document.getElementById('adminMain');
+      if (!side || !backdrop || !openBtn || !main) return;
+
+      var navBusy = false;
+      var root = (window.__ROOT__ || '').replace(/\/$/, '');
 
       function isMobileNav() {
         return window.matchMedia('(max-width: 860px)').matches;
@@ -133,12 +143,6 @@
       if (closeBtn) closeBtn.addEventListener('click', closeSide);
       backdrop.addEventListener('click', closeSide);
 
-      side.querySelectorAll('a').forEach(function (a) {
-        a.addEventListener('click', function () {
-          if (isMobileNav()) closeSide();
-        });
-      });
-
       document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape' && body.classList.contains('admin-nav-open')) {
           closeSide();
@@ -149,10 +153,134 @@
         if (!isMobileNav()) closeSide();
       });
 
-      // Initial: closed on mobile, always "visible" to a11y on desktop
       if (isMobileNav()) {
         side.setAttribute('aria-hidden', 'true');
       }
+
+      function isAdminPageUrl(href) {
+        if (!href) return false;
+        try {
+          var u = new URL(href, window.location.href);
+          if (u.origin !== window.location.origin) return false;
+          var path = u.pathname.replace(/\/$/, '') || '/';
+          var prefix = (root || '') + '/admin';
+          if (path === prefix || path.indexOf(prefix + '/') === 0) {
+            // Full page for login / logout / binary downloads
+            if (/\/admin\/(login|logout)(\/|$)/.test(path)) return false;
+            if (/\/(download|preview)(\/|$)/.test(path)) return false;
+            return true;
+          }
+          return false;
+        } catch (err) {
+          return false;
+        }
+      }
+
+      function setActiveNav(href) {
+        var path;
+        try {
+          path = new URL(href, window.location.href).pathname.replace(/\/$/, '') || '/';
+        } catch (e) {
+          return;
+        }
+        side.querySelectorAll('a.admin-nav-link, nav a').forEach(function (a) {
+          var ap;
+          try {
+            ap = new URL(a.href, window.location.href).pathname.replace(/\/$/, '') || '/';
+          } catch (e2) {
+            return;
+          }
+          var on = ap === path;
+          a.classList.toggle('active', on);
+        });
+      }
+
+      function runScripts(container) {
+        var scripts = container.querySelectorAll('script');
+        scripts.forEach(function (old) {
+          var s = document.createElement('script');
+          if (old.src) {
+            s.src = old.src;
+          } else {
+            s.textContent = old.textContent;
+          }
+          // Replace so inline scripts execute in page context
+          old.parentNode.replaceChild(s, old);
+        });
+      }
+
+      function softNavigate(href, push) {
+        if (navBusy) return;
+        navBusy = true;
+        body.classList.add('admin-navigating');
+        if (isMobileNav()) closeSide();
+
+        fetch(href, {
+          credentials: 'same-origin',
+          headers: { 'X-Requested-With': 'AdminNav', 'Accept': 'text/html' },
+        })
+          .then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            var ct = (r.headers.get('content-type') || '');
+            if (ct.indexOf('text/html') < 0) throw new Error('not html');
+            return r.text();
+          })
+          .then(function (html) {
+            var doc = new DOMParser().parseFromString(html, 'text/html');
+            var nextMain = doc.querySelector('#adminMain, main.admin-main');
+            if (!nextMain) throw new Error('no main');
+            // Tear down page-local overlays from previous view
+            document.querySelectorAll('.preview-overlay').forEach(function (el) {
+              el.remove();
+            });
+            main.innerHTML = nextMain.innerHTML;
+            document.title = doc.title || document.title;
+            setActiveNav(href);
+            runScripts(main);
+            if (push) {
+              history.pushState({ adminSoft: true }, '', href);
+            }
+            // Scroll main pane to top
+            main.scrollTop = 0;
+            window.scrollTo(0, 0);
+          })
+          .catch(function () {
+            // Fallback: full navigation
+            window.location.href = href;
+          })
+          .finally(function () {
+            body.classList.remove('admin-navigating');
+            navBusy = false;
+          });
+      }
+
+      side.querySelectorAll('a[href]').forEach(function (a) {
+        a.addEventListener('click', function (e) {
+          if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || a.target === '_blank') {
+            return;
+          }
+          var href = a.getAttribute('href') || '';
+          if (!href || href.charAt(0) === '#' || href.indexOf('javascript:') === 0) {
+            return;
+          }
+          // "返回前台" leaves admin shell
+          if (!isAdminPageUrl(a.href)) {
+            body.classList.add('admin-navigating');
+            return;
+          }
+          e.preventDefault();
+          if (a.classList.contains('active') && !a.search) {
+            // Same page: still allow refresh of query-less dashboard etc.
+          }
+          softNavigate(a.href, true);
+        });
+      });
+
+      window.addEventListener('popstate', function () {
+        if (isAdminPageUrl(window.location.href)) {
+          softNavigate(window.location.href, false);
+        }
+      });
     })();
   </script>
 </body>
