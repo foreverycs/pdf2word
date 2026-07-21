@@ -11,18 +11,6 @@
 }
 
 /* —— Atmospheric background —— */
-.home-bg > .bg-particles {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  /* Above grid/orbs so particles stay visible; content is .site-page z-index 1 */
-  z-index: 3;
-  display: block;
-  pointer-events: none;
-  opacity: 1;
-}
-
 .home-bg {
   position: fixed;
   inset: 0;

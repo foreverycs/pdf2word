@@ -93,17 +93,6 @@ body.tool-page > .bg {
     linear-gradient(165deg, #fffbeb 0%, #eef2f7 45%, #f5f7fb 100%);
 }
 
-.tool-page .bg > .bg-particles {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 2;
-  display: block;
-  pointer-events: none;
-  opacity: 1;
-}
-
 .tool-page .shell {
   position: relative;
   z-index: 1;
