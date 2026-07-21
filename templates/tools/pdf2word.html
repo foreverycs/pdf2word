@@ -213,7 +213,14 @@
       fileInput.value = '';
     }
 
-    bindDropZone({ drop, input: fileInput, onFiles: addFiles });
+    bindDropZone({
+      drop,
+      input: fileInput,
+      paste: false,
+      acceptFile: (f) => /\.pdf$/i.test(f.name || '') || f.type === 'application/pdf',
+      rejectMessage: '仅支持 PDF 文件',
+      onFiles: addFiles,
+    });
 
     btn.addEventListener('click', async () => {
       if (!selected.length) return;

@@ -520,9 +520,18 @@ def _health_details(*, force: bool = False) -> dict:
     return _health_detail_cache
 
 
+# Shown when async job is missing (restart, TTL, or multi-worker routing).
+_JOB_MISSING_DETAIL = (
+    "任务不存在或已过期。可能因服务重启、任务清理，或使用了多个 uvicorn worker。"
+    "异步 PDF/Word 任务为进程内存存储，请使用 --workers 1 后重新提交。"
+)
+
+
 @app.get("/health")
 async def health(detail: int = Query(0, ge=0, le=1)):
     """Liveness probe. Pass ``?detail=1`` for engines, OCR, and storage stats."""
+    from core.jobs import jobs_backend_name
+
     public = enabled_tools()
     featured = featured_tools()
     body: dict = {
@@ -533,6 +542,16 @@ async def health(detail: int = Query(0, ge=0, le=1)):
         "tools_module": len(public),
         "tools_featured": len(featured),
         "tools_registered": len(TOOL_REGISTRY),
+        # Ops hint: async convert jobs are process-local.
+        "jobs": {
+            "backend": jobs_backend_name(),
+            "single_worker_required": True,
+            "note": (
+                "Async conversion jobs are in-process; run uvicorn with --workers 1 "
+                "(multi-worker causes job 404 on poll/download)."
+            ),
+            "note_zh": "异步任务为进程内存存储，请使用 --workers 1。",
+        },
     }
     if detail:
         body["categories"] = [
@@ -555,7 +574,7 @@ async def api_job_status(job_id: str):
 
     job = await get_job(job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise HTTPException(status_code=404, detail=_JOB_MISSING_DETAIL)
     return JSONResponse(job_public_dict(job))
 
 
@@ -569,11 +588,17 @@ async def api_job_download(job_id: str, background_tasks: BackgroundTasks):
 
     job = await get_job(job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise HTTPException(status_code=404, detail=_JOB_MISSING_DETAIL)
     if job.status != JobStatus.done or not job.output_path:
-        raise HTTPException(status_code=409, detail="Job has no downloadable result yet")
+        raise HTTPException(
+            status_code=409,
+            detail="任务尚未完成，暂无可下载结果。请稍候再试或重新提交。",
+        )
     if not os.path.isfile(job.output_path):
-        raise HTTPException(status_code=410, detail="Job result expired or missing")
+        raise HTTPException(
+            status_code=410,
+            detail="结果文件已过期或已清理，请重新转换。",
+        )
     headers = dict(job.response_headers or {})
     path = job.output_path
     filename = job.download_name or os.path.basename(path)

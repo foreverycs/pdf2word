@@ -86,6 +86,11 @@ def test_api_request_id_header_and_jobs_404():
 
     missing = client.get("/api/jobs/does-not-exist")
     assert missing.status_code == 404
+    detail = missing.json().get("detail") or ""
+    assert "workers" in detail.lower() or "过期" in detail or "不存在" in detail
+
+    health = client.get("/health").json()
+    assert health.get("jobs", {}).get("single_worker_required") is True
 
 
 @pytest.mark.asyncio

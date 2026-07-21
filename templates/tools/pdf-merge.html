@@ -502,7 +502,16 @@
       fileInput.value = '';
     }
 
-    bindDropZone({ drop: drop, input: fileInput, onFiles: addFiles });
+    bindDropZone({
+      drop: drop,
+      input: fileInput,
+      paste: false,
+      acceptFile: function (f) {
+        return /\.pdf$/i.test(f.name || '') || f.type === 'application/pdf';
+      },
+      rejectMessage: '仅支持 PDF 文件',
+      onFiles: addFiles,
+    });
 
     function printPreview() {
       if (!previewUrl) return;

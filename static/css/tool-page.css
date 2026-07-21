@@ -352,6 +352,22 @@ body.tool-page > .bg {
   border: 1px solid var(--line);
 }
 
+/* Drop zone reject flash (wrong type / size) */
+.tool-page .drop.drop-reject,
+.tool-page label.drop.drop-reject {
+  border-color: #f87171 !important;
+  background: var(--danger-bg, #fef2f2) !important;
+  animation: drop-reject-shake 0.35s ease;
+}
+@keyframes drop-reject-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tool-page .drop.drop-reject { animation: none; }
+}
+
 .tool-page .card {
   background: #fff;
   border: 1px solid var(--line);

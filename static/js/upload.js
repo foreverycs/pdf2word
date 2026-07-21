@@ -177,6 +177,55 @@
    *   enabled?: () => boolean
    * }} cfg
    */
+  function flashDropReject(drop, message) {
+    if (drop) {
+      drop.classList.remove("drag");
+      drop.classList.add("drop-reject");
+      setTimeout(function () {
+        drop.classList.remove("drop-reject");
+      }, 700);
+    }
+    if (global.ToolkitUX && global.ToolkitUX.toast) {
+      global.ToolkitUX.toast(message || "文件类型不符合要求", "err");
+    }
+  }
+
+  /**
+   * Filter FileList/array with optional acceptFile; toast when all rejected.
+   * @returns {File[]}
+   */
+  function filterIncomingFiles(fileList, acceptFile, drop) {
+    var files = Array.prototype.slice.call(fileList || []);
+    if (!files.length) return [];
+    if (typeof acceptFile !== "function") return files;
+    var ok = [];
+    var bad = [];
+    files.forEach(function (f) {
+      try {
+        if (acceptFile(f)) ok.push(f);
+        else bad.push(f);
+      } catch (e) {
+        bad.push(f);
+      }
+    });
+    if (!ok.length && bad.length) {
+      flashDropReject(
+        drop,
+        bad.length === 1
+          ? "不支持该文件类型或大小不符合要求"
+          : "所选 " + bad.length + " 个文件均不符合要求"
+      );
+      return [];
+    }
+    if (bad.length && global.ToolkitUX && global.ToolkitUX.toast) {
+      global.ToolkitUX.toast(
+        "已忽略 " + bad.length + " 个不符合要求的文件",
+        "warn"
+      );
+    }
+    return ok;
+  }
+
   function bindDropZone(cfg) {
     var drop = cfg.drop;
     var input = cfg.input;
@@ -185,15 +234,54 @@
       return true;
     };
     var paste = cfg.paste !== false;
+    var acceptFile = cfg.acceptFile || null;
+    var rejectMsg = cfg.rejectMessage || "";
+
+    function deliver(fileList) {
+      // acceptFile pre-filter (type); page onFiles still does size/dup checks
+      if (typeof acceptFile === "function") {
+        var raw = Array.prototype.slice.call(fileList || []);
+        if (!raw.length) return;
+        var ok = [];
+        var bad = 0;
+        raw.forEach(function (f) {
+          try {
+            if (acceptFile(f)) ok.push(f);
+            else bad += 1;
+          } catch (e) {
+            bad += 1;
+          }
+        });
+        if (!ok.length) {
+          flashDropReject(
+            drop,
+            rejectMsg || "不支持该文件类型或大小不符合要求"
+          );
+          return;
+        }
+        if (bad && global.ToolkitUX && global.ToolkitUX.toast) {
+          global.ToolkitUX.toast(
+            "已忽略 " + bad + " 个不符合要求的文件",
+            "warn"
+          );
+        }
+        onFiles(ok);
+        return;
+      }
+      onFiles(fileList);
+    }
 
     input.addEventListener("change", function (e) {
-      onFiles(e.target.files);
+      deliver(e.target.files);
     });
 
     ["dragover", "dragenter"].forEach(function (ev) {
       drop.addEventListener(ev, function (e) {
         e.preventDefault();
-        if (enabled()) drop.classList.add("drag");
+        if (enabled()) {
+          drop.classList.add("drag");
+          drop.classList.remove("drop-reject");
+        }
       });
     });
     ["dragleave", "drop"].forEach(function (ev) {
@@ -204,7 +292,7 @@
     });
     drop.addEventListener("drop", function (e) {
       if (!enabled()) return;
-      onFiles(e.dataTransfer.files);
+      deliver(e.dataTransfer && e.dataTransfer.files);
     });
 
     // Ctrl+V image/file paste while on the page (optional)
@@ -213,9 +301,9 @@
         target: document,
         enabled: enabled,
         onFiles: function (files) {
-          onFiles(files);
+          deliver(files);
         },
-        accept: cfg.acceptFile || function () {
+        accept: acceptFile || function () {
           return true;
         },
       });
@@ -562,6 +650,7 @@
     fmtSize: fmtSize,
     downloadName: downloadName,
     errDetail: errDetail,
+    filterIncomingFiles: filterIncomingFiles,
     xhrPost: xhrPost,
     xhrPostJson: xhrPostJson,
     pollJob: pollJob,

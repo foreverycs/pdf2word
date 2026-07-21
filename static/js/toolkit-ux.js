@@ -25,11 +25,19 @@
     { re: /网络错误|Failed to fetch|NetworkError|ERR_NETWORK/i, msg: "网络异常，请检查连接后重试。" },
     { re: /超时|timeout|Timeout/i, msg: "处理超时。可缩小页数、关闭 OCR，或检查反向代理超时设置后重试。" },
     { re: /已取消|abort/i, msg: "已取消。" },
+    {
+      re: /任务不存在|Job not found|workers\s*1|多 worker|多进程|结果文件已过期|任务尚未完成|已过期.*重启/i,
+      msg:
+        "转换任务已失效或不存在。可能因服务重启、任务过期，或部署了多个 worker。请重新提交；异步任务请使用 --workers 1。",
+    },
     { re: /仅支持|不支持|invalid|格式/i, msg: null }, // keep original when specific
     { re: /403|禁用|disabled|未启用/i, msg: "该工具已关闭，请从首页选择其他工具，或联系管理员。" },
     { re: /404|不存在/i, msg: "接口不存在或页面已移动，请返回首页重试。" },
     { re: /500|Internal Server/i, msg: "服务处理失败，请稍后重试。若持续出现请联系管理员。" },
   ];
+
+  var JOB_MISSING_MSG =
+    "转换任务已失效或不存在。可能因服务重启、任务过期，或部署了多个 worker。请重新提交；异步任务请使用 --workers 1。";
 
   function friendlyError(raw) {
     var s = raw == null ? "" : String(raw);
@@ -660,8 +668,8 @@
             if (r.status === 404) {
               updateTrackedJob(j.id, {
                 status: "error",
-                message: "任务已过期或不存在",
-                error: "任务已过期（服务重启或超时清理）",
+                message: "任务已失效",
+                error: JOB_MISSING_MSG,
               });
             }
             return null;
@@ -713,6 +721,22 @@
     var list = document.getElementById("cmd-palette-list");
     var active = 0;
     var items = [];
+    var prevFocus = null;
+
+    function focusables() {
+      return [input].filter(function (el) {
+        return el && !el.disabled;
+      });
+    }
+
+    // Focus trap: keep Tab inside the dialog
+    root.addEventListener("keydown", function (e) {
+      if (root.hidden || e.key !== "Tab") return;
+      var nodes = focusables();
+      if (!nodes.length) return;
+      e.preventDefault();
+      nodes[0].focus();
+    });
 
     function setActive(i) {
       if (!items.length) {
@@ -831,17 +855,28 @@
 
   function openPalette() {
     var p = ensurePalette();
+    p.prevFocus = document.activeElement;
     p.root.hidden = false;
+    p.root.setAttribute("aria-hidden", "false");
     p.render("");
     p.input.value = "";
     setTimeout(function () {
       p.input.focus();
+      p.input.select && p.input.select();
     }, 10);
   }
 
   function closePalette() {
     if (!paletteState) return;
     paletteState.root.hidden = true;
+    paletteState.root.setAttribute("aria-hidden", "true");
+    var prev = paletteState.prevFocus;
+    paletteState.prevFocus = null;
+    if (prev && typeof prev.focus === "function") {
+      try {
+        prev.focus();
+      } catch (e) {}
+    }
   }
 
   function togglePalette() {
@@ -972,15 +1007,39 @@
     }
   }
 
-  /* —— PWA service worker —— */
+  /* —— PWA service worker + update nudge —— */
   function registerServiceWorker() {
     if (!("serviceWorker" in navigator)) return;
     // Only secure contexts (localhost / https)
     if (!window.isSecureContext) return;
     var swUrl = appUrl("/sw.js");
+    var refreshing = false;
     window.addEventListener("load", function () {
-      navigator.serviceWorker.register(swUrl, { scope: appUrl("/") || "/" }).catch(function () {
-        /* ignore SW failures (file://, old browsers) */
+      navigator.serviceWorker
+        .register(swUrl, { scope: appUrl("/") || "/" })
+        .then(function (reg) {
+          // Already waiting worker from a previous visit
+          if (reg.waiting) {
+            toast("检测到界面更新，刷新页面即可使用新版本", "info", 5000);
+          }
+          reg.addEventListener("updatefound", function () {
+            var nw = reg.installing;
+            if (!nw) return;
+            nw.addEventListener("statechange", function () {
+              if (nw.state === "installed" && navigator.serviceWorker.controller) {
+                toast("已下载新版本界面，刷新页面生效", "info", 5500);
+              }
+            });
+          });
+        })
+        .catch(function () {
+          /* ignore SW failures (file://, old browsers) */
+        });
+      navigator.serviceWorker.addEventListener("controllerchange", function () {
+        if (refreshing) return;
+        refreshing = true;
+        // Soft nudge only — auto-reload can interrupt uploads
+        toast("新版本已激活，建议刷新页面以加载最新样式", "info", 6000);
       });
     });
   }

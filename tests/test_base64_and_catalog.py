@@ -219,6 +219,7 @@ def test_health_includes_categories():
     assert light.status_code == 200
     assert light.json()["status"] == "ok"
     assert "categories" not in light.json()
+    assert light.json().get("jobs", {}).get("single_worker_required") is True
 
     r = client.get("/health?detail=1")
     assert r.status_code == 200

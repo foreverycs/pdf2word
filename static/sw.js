@@ -1,6 +1,6 @@
 /* Toolkit shell service worker — cache static chrome only; never cache API/uploads. */
 /* Bump CACHE when shipping SW logic changes. */
-var CACHE = "toolkit-shell-v2";
+var CACHE = "toolkit-shell-v3";
 /* Paths relative to SW origin; versioned query strings still match via pathname checks. */
 var PRECACHE = [
   "/static/css/tokens.css",

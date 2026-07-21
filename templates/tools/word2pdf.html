@@ -186,6 +186,9 @@
     bindDropZone({
       drop,
       input: fileInput,
+      paste: false,
+      acceptFile: (f) => /\.docx?$/i.test(f.name || ''),
+      rejectMessage: '仅支持 .docx / .doc 文件',
       onFiles: addFiles,
       enabled: () => ENGINE_READY,
     });

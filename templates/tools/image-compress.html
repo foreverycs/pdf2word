@@ -231,8 +231,16 @@
       paste: true,
       acceptFile: function (f) {
         var n = (f.name || "").toLowerCase();
-        return /\.(jpe?g|png|gif|svg)$/i.test(n) || (f.type || "").indexOf("image/") === 0;
+        var t = (f.type || "").toLowerCase();
+        return (
+          /\.(jpe?g|png|gif|svg)$/i.test(n) ||
+          t === "image/jpeg" ||
+          t === "image/png" ||
+          t === "image/gif" ||
+          t === "image/svg+xml"
+        );
       },
+      rejectMessage: "仅支持 JPEG、PNG、GIF、SVG",
       onFiles: function (files) {
         if (files && files[0]) setFile(files[0]);
         fileInput.value = "";

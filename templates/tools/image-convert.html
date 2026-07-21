@@ -544,8 +544,13 @@
       input: fileInput,
       paste: true,
       acceptFile: function (f) {
-        return f && ((f.type || "").indexOf("image/") === 0 || /\.(jpe?g|png|gif|webp|bmp|tiff?|ico)$/i.test(f.name || ""));
+        return (
+          f &&
+          ((f.type || "").indexOf("image/") === 0 ||
+            /\.(jpe?g|png|gif|webp|bmp|tiff?|ico)$/i.test(f.name || ""))
+        );
       },
+      rejectMessage: "仅支持常见图片格式（JPEG/PNG/WebP/GIF/BMP/TIFF/ICO）",
       onFiles: function (files) {
         if (files && files[0]) setFile(files[0]);
         fileInput.value = "";
